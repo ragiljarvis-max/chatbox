@@ -156,6 +156,33 @@ Owner tidak puas tampilan sekarang (`ALIVE · 3801 ms · 0.5 tok/s` saja). Kebut
 - Verifikasi: `pnpm run check` (0 error), test terkait lulus, APK arm64-only + signed + package
   `net.garybully.chatbox`. Commit + push. Lapor path APK + bukti + screenshot bila memungkinkan.
 
+## FASE 6 — hanya custom provider, hapus daftar provider bawaan (owner, 2026-11-21)
+Owner: "Provider bawaan hapus semua aja, cuma butuh custom provider." Owner hanya pakai endpoint
+API sendiri (custom provider), tidak butuh preset bawaan (OpenAI, Claude, Gemini, DeepSeek, dll).
+
+### Pendekatan WAJIB (aman, jangan nuked kode)
+- Tujuan UI: daftar provider HANYA menampilkan **custom provider** (hasil "Add provider"). Semua
+  provider bawaan/preset TIDAK muncul di daftar (Settings → Provider) maupun di pemilih model.
+- JANGAN menghapus 45 file definisi di `src/shared/providers/definitions/` — itu akan merusak
+  pembuatan model, default-models, login ChatboxAI, oauth, model registry, dan ratusan test.
+  Cukup SEMBUNYIKAN dari UI: filter registry/catalog agar yang tampil hanya `isCustom === true`.
+- Titik kode: `src/shared/providers/catalog.ts` (membangun daftar provider utk UI), `ProviderList.tsx`,
+  dan pemilih model. Saring sehingga hanya custom yang dirender.
+- "Add provider" (custom) tetap jadi satu-satunya cara menambah provider. Pastikan alur add custom
+  tetap berfungsi (FASE 4 sudah menambah test add-provider).
+- Default provider/model saat pertama kali: jangan paksa pilih provider bawaan; arahkan ke buat
+  custom provider. Bila ada halaman onboarding/empty-state yang menawarkan preset bawaan, sembunyikan.
+
+### Catatan risiko (owner disadari)
+- Menghapus penuh definisi bawaan = risiko tinggi merusak banyak fitur & test. Owner setuju
+  pendekatan "sembunyikan dari UI" yang mencapai hasil yang sama (hanya custom terlihat) tanpa
+  merusak internals. Bila owner nanti minta hapus file fisik, itu fase terpisah.
+
+### Versi & build
+- Naikkan `package.json` → **0.1.4**. Build APK arm64 signed ke `bin/V0.1.4/` (jangan hapus versi lama).
+- Verifikasi: daftar provider hanya custom; add custom provider berfungsi; `pnpm run check` 0 error;
+  test terkait lulus; APK arm64-only + signed + package `net.garybully.chatbox`. Commit + push.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
