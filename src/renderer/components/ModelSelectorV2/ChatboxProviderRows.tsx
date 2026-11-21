@@ -190,41 +190,7 @@ export function ChatboxProviderRows({
             <Text span fw={650} size="sm" lh={1.15}>
               {getGroupLabel(group.id, t)}:
             </Text>
-            {group.isLocked && isChatboxAIAdvancedGroup(group.id) && (
-              <Text
-                span
-                td="underline"
-                c="chatbox-brand"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (proTrial.canClaim) {
-                    onClaimProTrial()
-                    return
-                  }
-                  if (pageName && selectedModelId) {
-                    trackUpgradeModelClick(pageName, 'list_model', selectedModelId)
-                  }
-                  proTrial.reportUpgradeClick(selectedModelId)
-                  platform.openLink(catalog.links?.upgrade || FALLBACK_UPGRADE_URL)
-                }}
-              >
-                {proTrial.canClaim ? t('Free trial for a limited time') : t('Upgrade to Pro')}
-              </Text>
-            )}
-            {proTrial.activeUntil && isChatboxAIAdvancedGroup(group.id) && (
-              <Text
-                span
-                td="underline"
-                c="chatbox-brand"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (pageName) trackProTrialUpgradeClick(pageName, selectedModelId)
-                  platform.openLink(catalog.links?.upgrade || FALLBACK_UPGRADE_URL)
-                }}
-              >
-                {t('On trial: ends {{time}}', { time: proTrial.activeUntil })}
-              </Text>
-            )}
+            {/* FASE 7: badge upsell "Upgrade to Pro" / trial dihapus */}
           </Flex>
         )}
         {groupRows}

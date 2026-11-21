@@ -548,71 +548,13 @@ export const LoggedInView = forwardRef<HTMLDivElement, LoggedInViewProps>(
                       : t('You have no more Chatbox AI quota left this month.')}
                   </Text>
 
-                  <UnstyledButton
-                    onClick={() =>
-                      void handleOpenAuthLink(
-                        'get-more',
-                        buildChatboxUrl(
-                          `/redirect_app/manage_license/${language}/?utm_source=app&utm_content=provider_cb_login_no_quota`
-                        )
-                      )
-                    }
-                    disabled={pendingExternalAction !== null}
-                    className="ml-auto flex flex-row items-center gap-xxs"
-                    style={{ opacity: pendingExternalAction === 'get-more' ? 0.6 : 1 }}
-                  >
-                    <Text span fw={600} className="whitespace-nowrap">
-                      {pendingExternalAction === 'get-more' ? t('Loading...') : t('get more')}
-                    </Text>
-                    <ScalableIcon icon={IconArrowRight} />
-                  </UnstyledButton>
+                  {/* FASE 7: tombol "get more" (upsell kuota) dihapus */}
                 </Flex>
               </Alert>
             )}
 
-          {/* Action Buttons */}
-          <Flex gap="xs" align="center">
-            {licenses.length === 0 && (
-              <Button
-                variant="filled"
-                flex={1}
-                onClick={() => {
-                  trackJkClickEvent(JK_EVENTS.FREE_LICENSE_CLAIM_CLICK, {
-                    pageName: JK_PAGE_NAMES.SETTING_PAGE,
-                    content: 'settings_chatboxai',
-                  })
-                  void handleOpenAuthLink(
-                    'claim-free-plan',
-                    buildChatboxUrl(
-                      `/redirect_app/claim_free_plan/${language}/?utm_source=app&utm_content=provider_cb_login_claim_free`
-                    )
-                  )
-                  trackingEvent('click_claim_free_plan_button', { event_category: 'user' })
-                }}
-                loading={pendingExternalAction === 'claim-free-plan'}
-                disabled={pendingExternalAction !== null}
-              >
-                {t('Claim Free Plan')}
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              flex={1}
-              onClick={() => {
-                void handleOpenAuthLink(
-                  'view-more-plans',
-                  buildChatboxUrl(
-                    `/redirect_app/view_more_plans/${language}/?utm_source=app&utm_content=provider_cb_login_more_plans`
-                  )
-                )
-                trackingEvent('click_view_more_plans_button', { event_category: 'user' })
-              }}
-              loading={pendingExternalAction === 'view-more-plans'}
-              disabled={pendingExternalAction !== null}
-            >
-              {t('View More Plans')}
-            </Button>
-          </Flex>
+          {/* FASE 7: tombol "Claim Free Plan" dan "View More Plans" (tawaran plan) dihapus.
+              Login, license key, dan detail license tetap tersedia. */}
         </Stack>
       </Stack>
     )

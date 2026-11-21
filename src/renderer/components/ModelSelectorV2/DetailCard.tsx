@@ -361,6 +361,7 @@ export function DetailCard({
         </Stack>
       )}
       {model.locked && (
+        // FASE 7: CTA upgrade/upsell "Available on Pro" dihapus.
         <Text size="sm" c="chatbox-tertiary" ta="center" mt={mobile ? 'xs' : 0}>
           {t('Available on Pro and above')}
         </Text>
@@ -383,25 +384,7 @@ export function DetailCard({
               {t('Close')}
             </Button>
           )}
-          {model.locked && (
-            <Button
-              variant="light"
-              fullWidth
-              size={mobile ? 'md' : 'sm'}
-              leftSection={<ScalableIcon icon={IconSparkles} size={16} />}
-              className="font-semibold"
-              onClick={() => {
-                if (onClaimProTrial) {
-                  onClaimProTrial()
-                  return
-                }
-                onUpgradeClick?.()
-                platform.openLink(upgradeLink || FALLBACK_UPGRADE_URL)
-              }}
-            >
-              {onClaimProTrial ? t('Free trial for a limited time') : t('Upgrade to Pro')}
-            </Button>
-          )}
+          {/* FASE 7: CTA "Upgrade to Pro" / free trial dihapus */}
         </Flex>
       )}
     </Stack>

@@ -104,11 +104,12 @@ function ToolPartRenderer({
       return <SuggestedQuestions onQuestionClick={onQuestionClick} disabled={disabled} />
 
     case 'show_free_trial_link':
-      return <FreeTrialLink onAfterClick={onClaimStart} />
+      // FASE 7: tawaran plan/upsell ChatboxAI dihapus; login & license tetap.
+      return null
 
     case 'show_claim_waiting':
-      if (!onClaimDetected) return null
-      return <ClaimWaitingCard onClaimDetected={onClaimDetected} />
+      // FASE 7: tawaran plan/upsell ChatboxAI dihapus; login & license tetap.
+      return null
 
     case 'mark_completed':
     case 'activate_license':
