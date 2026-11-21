@@ -199,3 +199,8 @@ tmp_*.*
 
 # Local pnpm store accidentally created by pnpm install in worktrees
 .pnpm-store/
+
+# Capacitor generated Android project & build artifacts (fork)
+/android/
+/bin/
+
