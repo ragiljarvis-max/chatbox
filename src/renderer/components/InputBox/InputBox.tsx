@@ -122,6 +122,7 @@ import Disclaimer from '../Disclaimer'
 import { ModelProviderIcon } from '../icons/ModelProviderIcon'
 import ModelSelectorV2 from '../ModelSelectorV2'
 import AgentModeButton from './AgentModeButton'
+import { featureFlags } from '@/utils/feature-flags'
 import { FileMiniCard, getParserTypeLabel, ImageMiniCard } from './Attachments'
 import { getAgentModeUIState } from './agentModeState'
 import { ComposerSettingsMenu } from './ComposerSettingsMenu'
@@ -2000,6 +2001,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   onChange={(level) => void handleReasoningLevelChange(level)}
                 />
 
+                {featureFlags.agentMode && (
                 <AgentModeButton
                   sessionId={currentSessionId || 'new'}
                   providerId={model?.provider}
@@ -2019,6 +2021,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   draftCopilotId={draftCopilotId}
                   draftCopilotName={draftCopilotName}
                 />
+                )}
 
                 {!isSmallScreen &&
                   canCreateThread &&

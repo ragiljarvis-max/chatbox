@@ -5,8 +5,12 @@ import { SkillsSection } from '@/components/settings/skills'
 import { MobileSkillsSection } from '@/components/settings/skills/MobileSkillsSection'
 import platform from '@/platform'
 
+import { FeatureDisabledRedirect } from '@/components/settings/FeatureDisabledRedirect'
+
+const HiddenFeatureRoute = () => <FeatureDisabledRedirect />
+
 export const Route = createFileRoute('/settings/skills')({
-  component: RouteComponent,
+  component: HiddenFeatureRoute,
 })
 
 export function RouteComponent() {

@@ -17,8 +17,12 @@ const searchSchema = z.object({
   install: z.string().optional(), // b64 encoded config
 })
 
+import { FeatureDisabledRedirect } from '@/components/settings/FeatureDisabledRedirect'
+
+const HiddenFeatureRoute = () => <FeatureDisabledRedirect />
+
 export const Route = createFileRoute('/settings/mcp')({
-  component: RouteComponent,
+  component: HiddenFeatureRoute,
   validateSearch: zodValidator(searchSchema),
 })
 

@@ -19,8 +19,12 @@ import { SearxngSearch } from '@/packages/web-search/searxng'
 import platform from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 
+import { FeatureDisabledRedirect } from '@/components/settings/FeatureDisabledRedirect'
+
+const HiddenFeatureRoute = () => <FeatureDisabledRedirect />
+
 export const Route = createFileRoute('/settings/web-search')({
-  component: RouteComponent,
+  component: HiddenFeatureRoute,
 })
 
 type WebSearchSettings = Settings['extension']['webSearch']

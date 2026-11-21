@@ -6,8 +6,12 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { featureFlags } from '@/utils/feature-flags'
 
+import { FeatureDisabledRedirect } from '@/components/settings/FeatureDisabledRedirect'
+
+const HiddenFeatureRoute = () => <FeatureDisabledRedirect />
+
 export const Route = createFileRoute('/settings/agent')({
-  component: RouteComponent,
+  component: HiddenFeatureRoute,
 })
 
 export function RouteComponent() {
