@@ -118,18 +118,20 @@ function useProviderPickerGroups({
 }
 
 function toSpotlightActions(groups: PickerGroup[]): SpotlightActionGroupData[] {
-  return groups.map((group) => ({
-    group: group.group,
-    actions: group.actions.map(
-      (action): SpotlightActionData => ({
-        id: action.id,
-        label: action.label,
-        description: action.description,
-        leftSection: action.leftSection,
-        onClick: action.onSelect,
-      })
-    ),
-  }))
+  return groups
+    .filter((group) => group.actions.length > 0)
+    .map((group) => ({
+      group: group.group,
+      actions: group.actions.map(
+        (action): SpotlightActionData => ({
+          id: action.id,
+          label: action.label,
+          description: action.description,
+          leftSection: action.leftSection,
+          onClick: action.onSelect,
+        })
+      ),
+    }))
 }
 
 function filterPickerGroups(query: string, groups: PickerGroup[]): PickerGroup[] {

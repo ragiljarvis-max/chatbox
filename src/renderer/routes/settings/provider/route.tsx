@@ -1,6 +1,6 @@
 import { Box, Flex } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
-import type { ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
+import type { BuiltinProviderBaseInfo, ModelProviderEnum, ProviderInfo, ProviderSettings } from '@shared/types'
 import { createFileRoute, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -38,9 +38,8 @@ export function RouteComponent() {
   const { isExceeded } = useVersion()
 
   const providers = useMemo<ProviderInfo[]>(() => {
-    const systemProviders = SystemProviders().filter(
-      (p) => !(isExceeded && p.name.toLocaleLowerCase().match(/openai|claude|gemini/i))
-    )
+    // FASE 6: hide built-in presets — only ChatboxAI (login) + custom providers are listed.
+    const systemProviders = SystemProviders().filter((p) => p.id === 'chatbox-ai')
     // Put ChatboxAI first
     const chatboxAI = systemProviders.find((p) => p.id === 'chatbox-ai')
     const others = systemProviders.filter((p) => p.id !== 'chatbox-ai')
@@ -50,9 +49,8 @@ export function RouteComponent() {
     }))
   }, [customProviders, isExceeded, providersMap])
 
-  const allSystemProviders = useMemo(() => {
-    return providers.filter((p) => !p.isCustom)
-  }, [providers])
+  // FASE 6: the spotlight must not offer built-in presets; only "Add Custom Provider" remains.
+  const allSystemProviders = useMemo<BuiltinProviderBaseInfo[]>(() => [], [])
 
   const [newProviderModalOpened, setNewProviderModalOpened] = useState(false)
 

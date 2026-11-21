@@ -17,7 +17,15 @@ export const useProviders = () => {
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const providerSettingsMap = useSettingsStore((state) => state.providers)
 
-  const allProviderBaseInfos = useMemo(() => [...SystemProviders(), ...(customProviders || [])], [customProviders])
+  // FASE 6: only custom providers are shown in the UI (plus ChatboxAI, whose login/license flow
+  // is kept per FASE 7). Built-in presets stay registered for internals but are hidden from lists.
+  const allProviderBaseInfos = useMemo(
+    () => [
+      ...SystemProviders().filter((p) => p.id === ModelProviderEnum.ChatboxAI),
+      ...(customProviders || []),
+    ],
+    [customProviders]
+  )
   const providers = useMemo(
     () =>
       allProviderBaseInfos
