@@ -136,3 +136,23 @@ test lulus, lalu build APK 0.1.2 seperti definisi FASE 4 di atas.
 - Quirk: pnpm build:renderer butuh Node 22 (engines >=22.13 <23) — pakai ~/.local/node22; skrip
   delete-sourcemaps menunjuk file yang tidak ada (.erb/scripts/delete-source-maps-runner.js) — jalankan
   manual `find release/app/dist -name '*.map' -delete` sebelum `npx cap sync android`.
+
+
+## FASE 3 — SELESAI (2026-11-21)
+- remote `upstream` (https://github.com/chatboxai/chatbox) ditambahkan; UPSTREAM.md dibuat di root.
+- Merge upstream/main 446bcf4 (v1.24.4) selesai (commit merge). Konflik: .gitignore + zh-Hans/translation.json
+  — digabung kedua sisi (fitur fork + entri upstream). Fitur fork dipertahankan: health-check
+  (ProviderList/ProviderHealthCheck/provider-health.ts), appId net.garybully.chatbox, signing keystore.properties.
+
+## FASE 4 — SELESAI (2026-11-21)
+- Diagnosis add provider: alur Add -> ProviderSpotlight (drawer mobile) -> AddProviderModal -> setSettings
+  -> $providerId setProviderSettings diverifikasi PASS dengan test baru:
+  - src/renderer/__tests__/add-provider-flow.test.tsx (UI flow mobile: Add -> spotlight -> modal -> submit -> navigate)
+  - src/renderer/__tests__/custom-provider-page.test.tsx (halaman settings provider custom render tanpa crash)
+  - src/renderer/stores/add-provider-flow.test.ts (store+persist: customProviders + providers map tersimpan)
+- `pnpm run check` PASS; test provider (5 file, 12 test) PASS. `pnpm run lint` masih 107 error dari kode
+  upstream hasil merge (biome) — baseline upstream, bukan file fork.
+- Versi 0.1.2 (package.json, versionCode 3, versionName 0.1.2). APK: bin/V0.1.2/chatbox-arm64-v0.1.2.apk
+  (arm64-v8a only, signed CN=garybully, aapt2: net.garybully.chatbox 0.1.2). bin/V0.1.0 & V0.1.1 tetap.
+- CATATAN build: renderer build:renderer butuh Node 22 (~/.local/node22); hapus *.map manual; `npx cap sync android`;
+  test jangan ditaruh di src/renderer/routes/** (route generator menganggapnya route).
