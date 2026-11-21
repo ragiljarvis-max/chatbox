@@ -46,6 +46,7 @@ export async function pingProvider(
     )
 
     let firstTokenAt: number | null = null
+    let lastTokenAt: number | null = null
     let chars = 0
     const start = performance.now()
 
@@ -54,21 +55,26 @@ export async function pingProvider(
         if (firstTokenAt === null) {
           firstTokenAt = performance.now()
         }
+        lastTokenAt = performance.now()
         chars += part.text.length
       }
     }
 
-    const elapsedMs = performance.now() - start
     if (firstTokenAt === null) {
       throw new Error('No response from provider')
     }
+    // Throughput uses the full streaming window (first token -> last token),
+    // excluding the time-to-first-token wait, so slow handshakes don't tank it.
+    const streamMs = (lastTokenAt ?? firstTokenAt) - firstTokenAt
     const tokens = Math.max(1, Math.round(chars / 4))
+    const tokensPerSecond =
+      streamMs > 0 ? Number(((tokens / streamMs) * 1000).toFixed(1)) : Number(tokens.toFixed(1))
     return {
       providerId,
       modelId,
       status: 'alive',
       latencyMs: Math.round(firstTokenAt - start),
-      tokensPerSecond: Number(((tokens / elapsedMs) * 1000).toFixed(1)),
+      tokensPerSecond,
       checkedAt,
     }
   } catch (e: unknown) {
@@ -81,6 +87,23 @@ export async function pingProvider(
       checkedAt,
     }
   }
+}
+
+export type ModelResultFilter = 'all' | 'alive' | 'dead'
+
+/**
+ * Apply the popup filter and sort: dead first (worst news up top),
+ * then by latency ascending so fast models lead within each group.
+ */
+export function filterAndSortResults(
+  results: ProviderHealthResult[],
+  filter: ModelResultFilter
+): ProviderHealthResult[] {
+  const filtered = results.filter((r) => filter === 'all' || r.status === filter)
+  return filtered.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'dead' ? -1 : 1
+    return (a.latencyMs ?? Number.POSITIVE_INFINITY) - (b.latencyMs ?? Number.POSITIVE_INFINITY)
+  })
 }
 
 /**

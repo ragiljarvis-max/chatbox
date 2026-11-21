@@ -11,7 +11,6 @@ import Divider from '@/components/common/Divider'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { ProviderHealthCheck } from './ProviderHealthCheck'
 import { FEATURED_PROVIDER_IDS, ProviderIconImage } from './providerIcons'
 
 interface ProviderListProps {
@@ -63,7 +62,6 @@ export function ProviderList({ providers, onAddProvider }: ProviderListProps) {
       )}
       gap={0}
     >
-      {availableProviders.length > 0 && <ProviderHealthCheck providers={availableProviders} />}
       <ScrollArea flex={1} type={isSmallScreen ? 'never' : 'hover'} scrollHideDelay={100}>
         <Stack p={isSmallScreen ? 0 : 'xs'} gap={isSmallScreen ? 0 : 'xs'}>
           {sortedProviders.map((provider) => (

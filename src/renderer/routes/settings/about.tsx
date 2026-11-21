@@ -20,7 +20,6 @@ export function RouteComponent() {
   const version = useVersion()
   const language = useLanguage()
   const autoLaunch = useSettingsStore((s) => s.autoLaunch)
-  const autoUpdate = useSettingsStore((s) => s.autoUpdate)
   const betaUpdate = useSettingsStore((s) => s.betaUpdate)
   const setSettings = useSettingsStore((s) => s.setSettings)
   const hasVersion = /\d/.test(version.version)
@@ -63,12 +62,6 @@ export function RouteComponent() {
             label={t('Launch at system startup')}
             checked={autoLaunch}
             onChange={(checked) => setSettings({ autoLaunch: checked })}
-          />
-          <SettingSwitchRow
-            id="auto-update"
-            label={t('Automatic updates')}
-            checked={autoUpdate}
-            onChange={(checked) => setSettings({ autoUpdate: checked })}
           />
           <SettingSwitchRow
             id="beta-update"

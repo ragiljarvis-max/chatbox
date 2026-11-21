@@ -281,6 +281,30 @@ Rename app jadi **chatboss**. Fork dari chatbox, tapi identitasnya sendiri.
   "chatboss", ikon baru, halaman about tanpa cek update, `pnpm run check` 0 error, test lulus,
   APK arm64 + signed. Commit + push.
 
+## FASE 5 — SELESAI (2026-11-21)
+- A: health-check dipindah ke route top-level `/model-test` (`src/renderer/routes/model-test.tsx`);
+  panel lama `ProviderHealthCheck.tsx` dihapus dari `ProviderList.tsx`. Entry nav baru "Model Test"
+  (IconFlask) di Sidebar (tampil juga di mobile). `filterAndSortResults` dipindah ke
+  `src/renderer/utils/provider-health.ts` supaya bisa dites.
+- B: ringkasan 3 kartu stat (Total / Alive "N of M" / Dead "N of M"); kartu Alive/Dead clickable →
+  Modal detail per-model: badge ALIVE/DEAD, `ms`, `tok/s`, nama provider·model, filter
+  SegmentedControl All/Alive/Dead, sort dead dulu lalu by latency asc.
+- C: UI Mantine modern (Card, Badge berwarna, Progress saat ping, empty-state). tok/s diperbaiki:
+  latency = time-to-first-token; tok/s = total token (est char/4) / durasi streaming penuh
+  (first token → last token), bukan total elapsed.
+- D: auto-update dimatikan — toggle "Automatic updates" dihapus dari settings/about.tsx;
+  SidebarUpdateBanner (dan installUpdate di Sidebar) dihapus. `initUpdateListeners` sudah
+  desktop-only sejak upstream; mobile tidak pernah auto-check update.
+- i18n: keys baru (Model Test, Total, Alive, Dead, All, Not tested, dst.) di 15 locales
+  (en full; zh-Hans/zh-Hant/de/ja diterjemahkan; lainnya fallback en).
+- Test baru: src/renderer/__tests__/provider-health-results.test.ts (filter+sort) — PASS.
+  `pnpm run check` PASS (node22). Test provider (9) + __tests__ (5) + updateStore + i18n PASS.
+  (CATATAN pre-existing: vitest gabungan lintas direktori kadang gagal jsdom setPointerCapture
+  saat dijalankan bersama — per-direktori PASS semua.)
+- Versi 0.1.3 (package.json, versionCode 4, versionName 0.1.3). APK: bin/V0.1.3/chatbox-arm64-v0.1.3.apk
+  (22.8 MB, arm64-v8a only, signed CN=garybully, aapt2: net.garybully.chatbox 0.1.3 versionCode 4).
+  bin/V0.1.0/V0.1.1/V0.1.2 tetap ada.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau

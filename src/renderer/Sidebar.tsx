@@ -7,6 +7,7 @@ import {
   IconDownload,
   IconHelpCircle,
   IconInfoCircle,
+  IconFlask,
   IconLayoutSidebarLeftCollapse,
   IconMessageChatbot,
   IconPhotoPlus,
@@ -42,7 +43,7 @@ import { getSidebarModalSx } from './sidebar-drawer'
 import icon from './static/icon.png'
 import { useLanguage } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
-import { installUpdate, useUpdateStore } from './stores/updateStore'
+import { useUpdateStore } from './stores/updateStore'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 
 interface ChatboxWebViewPlugin {
@@ -262,6 +263,14 @@ export default function Sidebar() {
             onClick={handleCreateNewPictureSession}
           />
           <SidebarNavRow
+            label={t('Model Test')}
+            icon={IconFlask}
+            onClick={() => {
+              navigate({ to: '/model-test' })
+              closeOnSmallScreen()
+            }}
+          />
+          <SidebarNavRow
             label={t('My Copilots')}
             icon={IconMessageChatbot}
             onClick={() => {
@@ -286,8 +295,6 @@ export default function Sidebar() {
         <Flex direction="column" flex={1} mih={0}>
           <SessionList sessionListViewportRef={sessionListViewportRef} atTopStateChange={setIsSessionListAtTop} />
         </Flex>
-
-        <SidebarUpdateBanner />
 
         <Box px="xs" pb="xs" className="empty:hidden">
           <SidebarLowQuotaReminder />
@@ -371,42 +378,6 @@ export default function Sidebar() {
         )}
       </Stack>
     </SwipeableDrawer>
-  )
-}
-
-/**
- * Desktop: shows update banner when an update is downloaded and ready to install.
- * Not shown on mobile (mobile uses dot indicator on About link).
- */
-function SidebarUpdateBanner() {
-  const isMobile = CHATBOX_BUILD_TARGET === 'mobile_app'
-  if (isMobile) return null
-  return <SidebarUpdateBannerInner />
-}
-
-function SidebarUpdateBannerInner() {
-  const { t } = useTranslation()
-  const updateStatus = useUpdateStore((s) => s.status)
-  const updateVersion = useUpdateStore((s) => s.version)
-
-  if (updateStatus !== 'downloaded') return null
-
-  return (
-    <Box px="xs" pb={4}>
-      <Flex
-        align="center"
-        gap="xs"
-        px="sm"
-        py={6}
-        className="rounded-md cursor-pointer bg-chatbox-background-gray-secondary hover:bg-chatbox-background-gray-secondary-hover"
-        onClick={installUpdate}
-      >
-        <ScalableIcon icon={IconDownload} size={ICON_SIZE.inline} className="text-chatbox-brand flex-shrink-0" />
-        <Text size="sm" c="chatbox-primary" lineClamp={1} flex={1}>
-          {`${t('Update ready to install')}${updateVersion ? ` (v${updateVersion})` : ''}`}
-        </Text>
-      </Flex>
-    </Box>
   )
 }
 
