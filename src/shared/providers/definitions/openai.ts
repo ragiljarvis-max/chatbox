@@ -1,4 +1,4 @@
-import { createOAuthCredentialManager, createOpenAIOAuthFetch } from '../../oauth'
+import { createOAuthCredentialManager, createOpenAIOAuthFetch, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAI from './models/openai'
@@ -10,6 +10,10 @@ export const openaiProvider = defineProvider({
   type: ModelProviderType.OpenAI,
   modelsDevProviderId: 'openai',
   curatedModelIds: [
+    'gpt-6-astra',
+    'gpt-6.1-sol',
+    'gpt-6.1-terra',
+    'gpt-6-luna',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
@@ -18,9 +22,7 @@ export const openaiProvider = defineProvider({
     'gpt-5.4-nano',
     'gpt-5.2',
     'gpt-5.2-pro',
-    'o4-mini',
     'o3-pro',
-    'o3-mini',
     'gpt-4.1',
     'gpt-4.1-mini',
     'gpt-4o',
@@ -35,6 +37,30 @@ export const openaiProvider = defineProvider({
     apiHost: 'https://api.openai.com',
     // https://platform.openai.com/docs/models
     models: [
+      {
+        modelId: 'gpt-6-astra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-sol',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-terra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6-luna',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'gpt-5.6-sol',
         capabilities: ['vision', 'tool_use', 'reasoning'],
@@ -84,19 +110,7 @@ export const openaiProvider = defineProvider({
         maxOutput: 128_000,
       },
       {
-        modelId: 'o4-mini',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
-      },
-      {
         modelId: 'o3-pro',
-        capabilities: ['vision', 'tool_use', 'reasoning'],
-        contextWindow: 200_000,
-        maxOutput: 100_000,
-      },
-      {
-        modelId: 'o3-mini',
         capabilities: ['vision', 'tool_use', 'reasoning'],
         contextWindow: 200_000,
         maxOutput: 100_000,
@@ -136,7 +150,7 @@ export const openaiProvider = defineProvider({
     ],
   },
   createModel: (config) => {
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.OpenAI,
       config.providerSetting,
@@ -151,7 +165,7 @@ export const openaiProvider = defineProvider({
           apiKey: 'oauth-placeholder',
           apiHost: config.formattedApiHost,
           apiPath: '/responses',
-          model: config.model,
+          model: { ...config.model, apiStyle: 'openai-responses' },
           temperature: config.settings.temperature,
           topP: config.settings.topP,
           maxOutputTokens: config.settings.maxTokens,

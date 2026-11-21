@@ -1,4 +1,4 @@
-import { createOAuthCredentialManager, createOpenAIOAuthFetch } from '../../oauth'
+import { createOAuthCredentialManager, createOpenAIOAuthFetch, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAIResponses from './models/openai-responses'
@@ -9,6 +9,10 @@ export const openaiResponsesProvider = defineProvider({
   type: ModelProviderType.OpenAIResponses,
   modelsDevProviderId: 'openai',
   curatedModelIds: [
+    'gpt-6-astra',
+    'gpt-6.1-sol',
+    'gpt-6.1-terra',
+    'gpt-6-luna',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
@@ -28,6 +32,30 @@ export const openaiResponsesProvider = defineProvider({
     apiPath: '/responses',
     // Responses API supported models - https://platform.openai.com/docs/api-reference/responses
     models: [
+      {
+        modelId: 'gpt-6-astra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-sol',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6.1-terra',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'gpt-6-luna',
+        capabilities: ['vision', 'tool_use', 'reasoning'],
+        contextWindow: 1_050_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'gpt-5.6-sol',
         capabilities: ['vision', 'tool_use', 'reasoning'],
@@ -85,7 +113,7 @@ export const openaiResponsesProvider = defineProvider({
     ],
   },
   createModel: (config) => {
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.OpenAIResponses,
       config.providerSetting,

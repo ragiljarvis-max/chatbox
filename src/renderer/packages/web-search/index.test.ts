@@ -7,6 +7,10 @@ vi.mock('@/stores/settingActions', () => ({
   getLicenseKey: vi.fn(() => 'test-license-key'),
 }))
 
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { getState: vi.fn(() => ({ providers: {} })) },
+}))
+
 // Mock the search providers to avoid actual network calls
 vi.mock('./bing', () => {
   return {
@@ -38,6 +42,17 @@ vi.mock('./tavily', () => {
   }
 })
 
+vi.mock('./deepseek', () => {
+  return {
+    DeepSeekSearch: class {
+      constructor(private readonly apiKey: string) {}
+      search = vi.fn().mockImplementation(async () => ({
+        items: [{ title: `DeepSeek Result ${this.apiKey}`, snippet: 'test', link: 'https://example.com' }],
+      }))
+    },
+  }
+})
+
 vi.mock('./searxng', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./searxng')>()
   return {
@@ -62,9 +77,11 @@ vi.mock('./chatbox-search', () => {
 })
 
 import { getExtensionSettings } from '@/stores/settingActions'
-import { webSearchExecutor } from './index'
+import { settingsStore } from '@/stores/settingsStore'
+import { testWebSearchConnection, webSearchExecutor } from './index'
 
 const mockGetExtensionSettings = vi.mocked(getExtensionSettings)
+const mockGetSettingsState = vi.mocked(settingsStore.getState)
 
 describe('webSearchExecutor', () => {
   beforeEach(() => {
@@ -155,11 +172,54 @@ describe('webSearchExecutor', () => {
     })
   })
 
+  it('searches DeepSeek with the DeepSeek model provider key', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'deepseek' },
+    } as ReturnType<typeof getExtensionSettings>)
+    mockGetSettingsState.mockReturnValue({
+      extension: { webSearch: { provider: 'deepseek' } },
+      providers: { deepseek: { apiKey: ' model-key ' } },
+    } as unknown as ReturnType<typeof settingsStore.getState>)
+
+    const result = await webSearchExecutor({ query: 'deepseek query' }, {})
+
+    expect(result.searchResults[0].title).toBe('DeepSeek Result model-key')
+  })
+
+  it('requires the DeepSeek model provider key for DeepSeek search', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'deepseek' },
+    } as ReturnType<typeof getExtensionSettings>)
+    mockGetSettingsState.mockReturnValue({
+      extension: { webSearch: { provider: 'deepseek' } },
+      providers: { deepseek: { apiKey: '  ' } },
+    } as unknown as ReturnType<typeof settingsStore.getState>)
+
+    await expect(webSearchExecutor({ query: 'missing deepseek key' }, {})).rejects.toMatchObject({
+      code: 20048,
+    })
+  })
+
   it('propagates the provider error when every configured provider fails', async () => {
     mockGetExtensionSettings.mockReturnValue({
       webSearch: { provider: 'tavily', tavilyApiKey: 'failing-key' },
     } as ReturnType<typeof getExtensionSettings>)
 
     await expect(webSearchExecutor({ query: 'provider failure' }, {})).rejects.toThrow('Tavily unavailable')
+  })
+})
+
+describe('testWebSearchConnection', () => {
+  it('checks current credentials even when a successful query is cached', async () => {
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'tavily', tavilyApiKey: 'working-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+    await webSearchExecutor({ query: 'Chatbox' }, {})
+    await expect(testWebSearchConnection()).resolves.toBeUndefined()
+
+    mockGetExtensionSettings.mockReturnValue({
+      webSearch: { provider: 'tavily', tavilyApiKey: 'failing-key' },
+    } as ReturnType<typeof getExtensionSettings>)
+    await expect(testWebSearchConnection()).rejects.toThrow('Tavily unavailable')
   })
 })

@@ -37,9 +37,11 @@ export type DetailModel = {
   providerName: string
   modelId: string
   name: string
+  type?: ProviderModelInfo['type']
   capabilities?: ProviderModelInfo['capabilities']
   costLevel?: string
   description?: string
+  pointsPerImage?: number
   pricing?: ChatboxAIModel['pricing']
   locked?: boolean
   disabledReason?: string

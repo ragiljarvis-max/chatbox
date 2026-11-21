@@ -1,8 +1,10 @@
-export type { CompactionOptions, CompactionResult } from './compaction'
+export type { ManualCompactionOptions, ManualCompactionOutcome, TargetedCompactionOutcome } from './compaction'
 export {
   isAutoCompactionEnabled,
   isCompactionInProgress,
   needsCompaction,
+  requestManualCompaction,
+  requestTargetedCompaction,
   runCompactionWithUIState,
 } from './compaction'
 export type { OverflowCheckOptions, OverflowCheckResult } from './compaction-detector'
@@ -16,30 +18,13 @@ export {
 export type { BuildContextOptions } from './context-builder'
 export {
   buildContextForAI,
-  buildContextForSession,
-  buildContextForThread,
   computeContextAfterCompaction,
-  getContextMessageIds,
 } from './context-builder'
-export type { AssessContextPressureOptions, ContextPressureAssessment } from './context-pressure'
-export {
-  assessContextPressure,
-  getConfiguredContextWindow,
-  TOOL_RESULT_STUB_PRESSURE_RATIO,
-} from './context-pressure'
+export { getConfiguredContextWindow } from './context-pressure'
 export type {
-  ContextTokensCacheKeyParams,
-  ContextTokensCacheValue,
-  GetContextMessagesForTokenEstimationOptions,
   UseContextTokensOptions,
   UseContextTokensResult,
 } from './context-tokens'
-export {
-  getContextMessagesForTokenEstimation,
-  getContextTokensCacheKey,
-  getLatestCompactionBoundaryId,
-  useContextTokens,
-  useStableEligibleMessages,
-} from './context-tokens'
+export { useContextTokens } from './context-tokens'
 export type { SummaryGeneratorOptions, SummaryResult } from './summary-generator'
 export { generateSummary, generateSummaryWithStream, isSummaryGenerationAvailable } from './summary-generator'

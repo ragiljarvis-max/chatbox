@@ -1,8 +1,11 @@
-import { ActionIcon, Button, Flex, Paper, Text } from '@mantine/core'
+import { ActionIcon, Button, Flex, Text } from '@mantine/core'
 import { ChatboxAIAPIError } from '@shared/models/errors'
 import type { ImageGeneration } from '@shared/types'
-import { IconCheck, IconCopy, IconRefresh, IconSettings, IconX } from '@tabler/icons-react'
+import { IconCheck, IconCopy, IconRefresh, IconSettings } from '@tabler/icons-react'
 import { Trans, useTranslation } from 'react-i18next'
+import { QuotaExhaustedCard } from '@/components/chat/QuotaExhaustedCard'
+import { ErrorNotice } from '@/components/common/ErrorNotice'
+import classes from '@/components/common/ErrorNotice.module.css'
 import LinkTargetBlank from '@/components/common/Link'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useCopied } from '@/hooks/useCopied'
@@ -11,6 +14,7 @@ import { trackingEvent } from '@/packages/event'
 import { buildChatboxUrl } from '@/packages/remote'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 export interface ImageGenerationErrorTipsProps {
   record: ImageGeneration
@@ -41,7 +45,8 @@ function ImageGenerationTaskErrorMessage({ errorCode }: { errorCode: ImageGenera
 }
 
 export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageGenerationErrorTipsProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const plan = useSettingsStore((state) => state.licenseDetail?.plan)
 
   const chatboxAIErrorDetail =
     typeof record.errorCode === 'number' ? ChatboxAIAPIError.getDetail(record.errorCode) : null
@@ -57,115 +62,142 @@ export function ImageGenerationErrorTips({ record, onRetry, isRetrying }: ImageG
   const isLicenseError =
     chatboxAIErrorDetail && ['license_not_found', 'expired_license'].includes(chatboxAIErrorDetail.name)
 
+  if (chatboxAIErrorDetail?.name === 'image_points_insufficient' || record.errorCode === 'image_points_insufficient') {
+    const canUpgrade = plan === 'lite' || plan === 'pro' || plan === 'free'
+    const locale = i18n.language.startsWith('zh') ? 'zh' : 'en'
+    const buy = () => platform.openLink(buildChatboxUrl(`/${locale}/user`))
+    return (
+      <QuotaExhaustedCard
+        kind="quota-exhausted"
+        title={t<string>('Insufficient points')}
+        description={
+          canUpgrade
+            ? t<string>(
+                'Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease upgrade your plan or buy an expansion pack.'
+              )
+            : t<string>(
+                'Your monthly image quota is used up, and you do not have enough compute points to generate images.\nPlease buy an expansion pack for more points.'
+              )
+        }
+        action={canUpgrade ? 'upgrade-plan' : 'buy-expansion-pack'}
+        onAction={canUpgrade ? () => platform.openLink(buildChatboxUrl(`/${locale}/pricing`)) : buy}
+        secondaryActions={[
+          ...(canUpgrade ? [{ label: t('Buy expansion pack'), onClick: buy }] : []),
+          { label: t('Retry'), onClick: onRetry, loading: isRetrying },
+        ]}
+      />
+    )
+  }
+
   return (
-    <Paper
-      p="lg"
-      radius="lg"
-      className="bg-[var(--chatbox-background-error-secondary)] border border-[var(--chatbox-border-error)]"
-    >
-      <Flex direction="column" align="center" gap="md">
-        <div className="w-12 h-12 rounded-full bg-[var(--chatbox-background-error-primary)] flex items-center justify-center">
-          <IconX size={24} className="text-white" />
-        </div>
+    <ErrorNotice icon="error">
+      <Text fw={500} size="sm" lh="20px">
+        {t('Generation Failed')}
+      </Text>
 
-        <Text fw={500} size="sm">
-          {t('Generation Failed')}
-        </Text>
-
-        {chatboxAIErrorDetail ? (
-          <Text size="sm" c="dimmed" ta="center" maw={400}>
-            <Trans
-              i18nKey={chatboxAIErrorDetail.i18nKey}
-              values={{
-                model: record.model.modelId,
-              }}
-              components={{
-                OpenSettingButton: (
-                  <Text
-                    component="span"
-                    className="cursor-pointer underline"
-                    c="chatbox-brand"
-                    onClick={() => navigateToSettings()}
-                  />
-                ),
-                OpenMorePlanButton: (
-                  <Text
-                    component="span"
-                    className="cursor-pointer underline"
-                    c="chatbox-brand"
-                    onClick={() => {
-                      platform.openLink(
-                        buildChatboxUrl(
-                          `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=image_creator_upgrade_required`
-                        )
+      {chatboxAIErrorDetail ? (
+        <Text size="sm" c="chatbox-secondary" lh="20px" className={classes.tip}>
+          <Trans
+            i18nKey={chatboxAIErrorDetail.i18nKey}
+            values={{
+              model: record.model.modelId,
+            }}
+            components={{
+              OpenSettingButton: (
+                <Text
+                  component="span"
+                  className="cursor-pointer underline"
+                  c="chatbox-brand"
+                  onClick={() => navigateToSettings()}
+                />
+              ),
+              OpenMorePlanButton: (
+                <Text
+                  component="span"
+                  className="cursor-pointer underline"
+                  c="chatbox-brand"
+                  onClick={() => {
+                    platform.openLink(
+                      buildChatboxUrl(
+                        `/redirect_app/view_more_plans/${settingActions.getLanguage()}?utm_source=app&utm_content=image_creator_upgrade_required`
                       )
-                      trackingEvent('click_view_more_plans_button_from_image_creator', {
-                        event_category: 'user',
-                      })
-                    }}
-                  />
-                ),
-                LinkToHomePage: <LinkTargetBlank href="https://chatboxai.app" />,
-              }}
-            />
-          </Text>
-        ) : imageGenerationTaskErrorCode ? (
-          <Text size="sm" c="dimmed" ta="center" maw={400}>
-            <ImageGenerationTaskErrorMessage errorCode={imageGenerationTaskErrorCode} />
-          </Text>
-        ) : (
-          <Text size="sm" c="dimmed" ta="center" className="whitespace-pre-wrap" maw={400}>
-            {record.error}
-          </Text>
-        )}
+                    )
+                    trackingEvent('click_view_more_plans_button_from_image_creator', {
+                      event_category: 'user',
+                    })
+                  }}
+                />
+              ),
+              LinkToHomePage: <LinkTargetBlank href="https://chatboxai.app" />,
+            }}
+          />
+        </Text>
+      ) : imageGenerationTaskErrorCode ? (
+        <Text size="sm" c="chatbox-secondary" lh="20px" className={classes.tip}>
+          <ImageGenerationTaskErrorMessage errorCode={imageGenerationTaskErrorCode} />
+        </Text>
+      ) : (
+        <Text size="sm" c="chatbox-secondary" lh="20px" className="whitespace-pre-wrap break-words">
+          {record.error}
+        </Text>
+      )}
 
-        {showErrorDebugInfo && (
-          <Flex align="center" gap={6} className="opacity-60">
-            <Flex direction="column" gap={2} maw={360}>
-              {record.errorItemUuid && (
-                <Text size="xs" c="dimmed" className="break-all">
-                  UUID: {record.errorItemUuid}
-                </Text>
-              )}
-              {record.taskId && (
-                <Text size="xs" c="dimmed" className="break-all">
-                  Task ID: {record.taskId}
-                </Text>
-              )}
-            </Flex>
-            <Tooltip label={copied ? t('Copied') : t('Copy')} withArrow openDelay={500}>
-              <ActionIcon variant="subtle" size="xs" color="gray" onClick={copy} aria-label={t('Copy')}>
-                {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-              </ActionIcon>
-            </Tooltip>
-          </Flex>
-        )}
-
-        <Flex gap="sm">
-          {isLicenseError && (
-            <Button
-              variant="light"
+      {showErrorDebugInfo && (
+        <div className={classes.details}>
+          <div className={classes.detailText}>
+            {record.errorItemUuid && (
+              <Text size="sm" c="chatbox-secondary" lh="20px" className="break-all">
+                UUID: {record.errorItemUuid}
+              </Text>
+            )}
+            {record.taskId && (
+              <Text size="sm" c="chatbox-secondary" lh="20px" className="break-all">
+                Task ID: {record.taskId}
+              </Text>
+            )}
+          </div>
+          <Tooltip label={copied ? t('Copied') : t('Copy')} withArrow openDelay={500}>
+            <ActionIcon
+              className={classes.action}
+              variant="subtle"
+              size="xs"
               color="gray"
-              leftSection={<IconSettings size={16} />}
-              onClick={() => navigateToSettings()}
-              radius="lg"
+              onClick={copy}
+              aria-label={t('Copy')}
             >
-              {t('Settings')}
-            </Button>
-          )}
+              {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+            </ActionIcon>
+          </Tooltip>
+        </div>
+      )}
+
+      <Flex gap="sm" wrap="wrap" mt={6} className={classes.buttonRow}>
+        <Button
+          variant="default"
+          size="sm"
+          fw={400}
+          rightSection={<IconRefresh size={16} />}
+          onClick={onRetry}
+          disabled={isRetrying}
+          loading={isRetrying}
+          radius="md"
+        >
+          {t('Retry')}
+        </Button>
+        {isLicenseError && (
           <Button
             variant="light"
-            color="chatbox-error"
-            leftSection={<IconRefresh size={16} />}
-            onClick={onRetry}
-            disabled={isRetrying}
-            loading={isRetrying}
-            radius="lg"
+            color="gray"
+            size="sm"
+            fw={400}
+            rightSection={<IconSettings size={16} />}
+            onClick={() => navigateToSettings()}
+            radius="md"
           >
-            {t('Retry')}
+            {t('Settings')}
           </Button>
-        </Flex>
+        )}
       </Flex>
-    </Paper>
+    </ErrorNotice>
   )
 }

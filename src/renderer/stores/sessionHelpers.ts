@@ -5,38 +5,53 @@ import {
   type ParsedAttachmentContent,
   type PickedAsset,
 } from '@chatbox/core/application/attachments'
-import { projectSessionMeta } from '@chatbox/core/application/session'
+import { projectSessionMeta, type SessionSearchOptions, SessionSearchService } from '@chatbox/core/application/session'
+import { isActionAvailableInMode, resolveSessionMode } from '@chatbox/core/session/mode-policy'
 import { isSessionAttachmentRagSupportedFilePath, isSupportedFile, isTextFilePath } from '@shared/file-extensions'
 import {
   CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   NON_RECOVERABLE_LOCAL_PARSER_ERROR_CODES,
 } from '@shared/file-parse-errors'
-import { searchSessionMessages } from '@shared/services/native-session-search'
-import type { Session, SessionMeta, SessionSettings, SessionThreadBrief, Settings } from '@shared/types'
+import { ChatboxAIAPIError } from '@shared/models/errors'
+import {
+  DEEPSEEK_OCR_MAX_FILE_SIZE,
+  getDeepSeekParserErrorCode,
+  isDeepSeekOcrFile,
+  recognizeDocumentWithDeepSeek,
+} from '@shared/services/deepseek-ocr'
+import {
+  ModelProviderEnum,
+  type SessionHeader,
+  type SessionMeta,
+  type SessionSettings,
+  type Settings,
+} from '@shared/types'
 import type { DocumentParserConfig } from '@shared/types/settings'
-import { migrateMessage } from '@shared/utils/message'
 import { BrowserAttachmentAdapter } from '@/adapters/BrowserAttachmentAdapter'
 import { CapacitorAttachmentAdapter } from '@/adapters/CapacitorAttachmentAdapter'
 import { DesktopAttachmentAdapter } from '@/adapters/DesktopAttachmentAdapter'
+import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import * as localParser from '@/packages/local-parser'
+import { prepareLocalWorkAttachment } from '@/packages/mobile-work-mode/attachments'
 import * as remote from '@/packages/remote'
 import { estimateTokens } from '@/packages/token'
 import platform from '@/platform'
 import storage from '@/storage'
+import { nonSessionStorageKey } from '@/storage/non-session-key'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { authInfoStore } from '@/stores/authInfoStore'
-import { rendererApplication } from '@/app/renderer-application'
+import { getChatboxAIParserAccountError } from '@/utils/file-parse-error'
 import { reportError } from '@/utils/sentry'
-import { migrateSession } from '@/utils/session-utils'
 import * as defaults from '../../shared/defaults'
 import { SESSION_ATTACHMENT_RAG_LOG_PREFIX } from '../../shared/session-attachment-rag/logging'
 import { createMessage, type Message, SessionSettingsSchema, TOKEN_CACHE_KEYS } from '../../shared/types'
 import type { AttachmentPreparationResult, PreprocessedFile } from '../types/input-box'
 import { resolveChatboxLicenseDefaultModel } from './defaultChatModel'
 import { lastUsedModelStore } from './lastUsedModelStore'
+import { getSessionAgentModeEntry } from './session/agent-mode'
 import { SESSION_ATTACHMENT_RAG_LARGE_ATTACHMENT_WARNING } from './sessionAttachmentRagErrors'
 import * as settingActions from './settingActions'
 import { getPlatformDefaultDocumentParser, settingsStore } from './settingsStore'
@@ -98,6 +113,9 @@ class FilePreprocessFailure extends Error {
 const EXPECTED_FILE_PREPROCESS_ERROR_CODES = new Set([
   'chatbox_ai_parser_failed',
   CHATBOX_AI_PARSER_LICENSE_KEY_REQUIRED_ERROR,
+  'deepseek_insufficient_balance',
+  'deepseek_parser_api_key_required',
+  'deepseek_parser_file_too_large',
   'document_parser_not_configured',
   EMPTY_ATTACHMENT_CONTENT_ERROR,
   'license_key_required',
@@ -203,7 +221,7 @@ function normalizeFilePreprocessFailure(error: unknown, stage: FilePreprocessSta
   }
 
   const errorCode = error instanceof Error ? error.message : ''
-  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode)) return undefined
+  if (EXPECTED_FILE_PREPROCESS_ERROR_CODES.has(errorCode) || getChatboxAIParserAccountError(errorCode)) return undefined
   return new FilePreprocessFailure(FILE_PREPROCESS_FAILED_ERROR, stage, error)
 }
 
@@ -382,6 +400,9 @@ async function fallbackToChatboxAIParser(
     if (isStorageQuotaError(error)) {
       throw new FilePreprocessFailure(FILE_STORAGE_QUOTA_EXCEEDED_ERROR, 'cloud_parse', error)
     }
+    if (error instanceof ChatboxAIAPIError && getChatboxAIParserAccountError(error.detail.name)) {
+      throw new Error(error.detail.name)
+    }
     if (
       error instanceof Error &&
       (error.message === EMPTY_ATTACHMENT_CONTENT_ERROR ||
@@ -502,6 +523,41 @@ async function parseFileWithMineruService(file: File, apiToken: string): Promise
   return { content: result.content, tokenCountMap: {}, parserType: 'mineru' }
 }
 
+/**
+ * Parse file using DeepSeek OCR, authenticated with the DeepSeek model provider API key
+ */
+async function parseFileWithDeepSeek(file: File): Promise<ParsedAttachmentContent> {
+  const apiKey = settingsStore.getState().providers?.[ModelProviderEnum.DeepSeek]?.apiKey?.trim()
+  if (!apiKey) {
+    throw new Error('deepseek_parser_api_key_required')
+  }
+  if (file.size > DEEPSEEK_OCR_MAX_FILE_SIZE) {
+    throw new Error('deepseek_parser_file_too_large')
+  }
+  let result: Awaited<ReturnType<typeof recognizeDocumentWithDeepSeek>>
+  try {
+    result = await recognizeDocumentWithDeepSeek({
+      apiKey,
+      fileName: file.name,
+      mimeType: file.type,
+      data: new Uint8Array(await file.arrayBuffer()),
+      fetch: (url, init) => fetch(url, init),
+    })
+  } catch (error) {
+    log.error(`DeepSeek parsing failed for "${file.name}":`, error)
+    throw new Error(getDeepSeekParserErrorCode(error))
+  }
+  if (result.truncatedPages.length > 0) {
+    log.warn(
+      `DeepSeek OCR output was cut off for "${file.name}" on page(s) ${result.truncatedPages.map((index) => index + 1).join(', ')}`
+    )
+  }
+  if (!hasParsedText(result.text)) {
+    throw new Error(EMPTY_ATTACHMENT_CONTENT_ERROR)
+  }
+  return { content: result.text, tokenCountMap: {}, parserType: 'deepseek' }
+}
+
 function createPickedAssetAdapter(): BrowserAttachmentAdapter {
   if (platform.type === 'mobile') {
     return new CapacitorAttachmentAdapter()
@@ -571,6 +627,9 @@ async function parsePickedAsset(
         throw new Error('third_party_parser_failed')
       }
     }
+    case 'deepseek':
+      // DeepSeek OCR reads PDF, Word, PowerPoint and images; other formats keep the local parser.
+      return isDeepSeekOcrFile(asset.name) ? parseFileWithDeepSeek(file) : parseFileWithLocalFallback(file)
     default:
       throw new Error('document_parser_not_configured')
   }
@@ -629,7 +688,7 @@ const attachmentService = new AttachmentService({
     get: <T>(key: string) => storage.getItem<T | null>(key, null),
     async set(key, value) {
       try {
-        await storage.setItem(key, value)
+        await storage.setItem(nonSessionStorageKey(key), value)
       } catch (error) {
         throw normalizeFilePreprocessFailure(error, 'metadata_storage') ?? error
       }
@@ -655,7 +714,15 @@ async function prepareFileAttachmentOnce(
   options?: AttachmentPreparationOptions
 ): Promise<AttachmentPreparationResult> {
   try {
-    const { asset: _preparedAsset, ...prepared } = await attachmentService.prepareOrThrow(asset, options)
+    const result =
+      platform.type === 'mobile' && options?.agentMode
+        ? await prepareLocalWorkAttachment(
+            asset,
+            () => pickedAssetAdapter.readDataUrl(asset),
+            (key, value) => storage.setBlob(key, value)
+          )
+        : await attachmentService.prepareOrThrow(asset, options)
+    const { asset: _preparedAsset, ...prepared } = result
     return { file, ...prepared }
   } catch (error) {
     log.error(`${SESSION_ATTACHMENT_RAG_LOG_PREFIX} Failed to preprocess file "${file.name}":`, error)
@@ -688,7 +755,15 @@ async function tryFreeOrphanedBlobs(): Promise<number | undefined> {
  * PickedAsset before application orchestration. Storage quota exhaustion
  * triggers one orphan-cleanup and retry before returning a stable error code.
  */
-export async function prepareFileAttachment(
+export function prepareFileAttachment(
+  file: File,
+  settings: SessionSettings,
+  options?: AttachmentPreparationOptions
+): Promise<AttachmentPreparationResult> {
+  return prepareFileAttachmentAccepted(file, settings, options)
+}
+
+async function prepareFileAttachmentAccepted(
   file: File,
   _settings: SessionSettings,
   options?: AttachmentPreparationOptions
@@ -736,9 +811,13 @@ export async function prepareFileAttachment(
  * @param settings 会话设置
  * @returns 预处理后的链接信息
  */
-export async function preprocessLink(
+export function preprocessLink(url: string, settings: SessionSettings) {
+  return preprocessLinkAccepted(url, settings)
+}
+
+async function preprocessLinkAccepted(
   url: string,
-  settings: SessionSettings
+  _settings: SessionSettings
 ): Promise<{
   url: string
   title: string
@@ -768,7 +847,7 @@ export async function preprocessLink(
 
       const { lineCount, byteLength, tokenCountMap } = computePreviewMetadata(existingContent, existingTokenMap)
 
-      await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+      await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
 
       return {
         url,
@@ -801,7 +880,7 @@ export async function preprocessLink(
 
       // Store token map for future use
       if (content) {
-        await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+        await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
       }
 
       return {
@@ -828,7 +907,7 @@ export async function preprocessLink(
         : { lineCount: undefined, byteLength: undefined, tokenCountMap: {} }
 
       if (content) {
-        await storage.setItem(`${uniqKey}_tokenMap`, tokenCountMap)
+        await storage.setItem(nonSessionStorageKey(`${uniqKey}_tokenMap`), tokenCountMap)
       }
 
       return {
@@ -892,7 +971,9 @@ export function constructUserMessage(
       const localPath =
         f.ragMode === 'session-retrieval'
           ? undefined
-          : f.localPath || platform.getLocalFilePath(f.file) || f.file.path || undefined
+          : f.localPath ||
+            platform.getLocalFilePath(f.file) ||
+            ('path' in f.file && typeof f.file.path === 'string' ? f.file.path : undefined)
 
       return {
         id: f.storageKey || f.file.name,
@@ -957,7 +1038,7 @@ export function mergeSettings(
   })
 }
 
-export function initEmptyChatSession(): Omit<Session, 'id'> {
+export function initEmptyChatSession(): Omit<SessionHeader, 'id'> & { messages: Message[] } {
   const settings = settingsStore.getState().getSettings()
   const { chat: lastUsedChatModel } = lastUsedModelStore.getState()
   const defaultChatModel = settings.defaultChatModel
@@ -966,15 +1047,14 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
         modelId: settings.defaultChatModel.model,
       }
     : lastUsedChatModel || resolveChatboxLicenseDefaultModel(settings)
-  const newSession: Omit<Session, 'id'> = {
+  const newSession: Omit<SessionHeader, 'id'> & { messages: Message[] } = {
     name: 'Untitled',
     type: 'chat',
     threadName: '',
     messages: [],
+    // Context size, temperature, top P and streaming stay unset so the chat follows the global
+    // new-chat defaults until it overrides them.
     settings: {
-      maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
-      temperature: settings.temperature || undefined,
-      topP: settings.topP || undefined,
       ...defaultChatModel,
     },
   }
@@ -988,106 +1068,16 @@ export function getSessionMeta(session: SessionMeta) {
   return projectSessionMeta(session)
 }
 
-function _searchSessions(query: string, s: Session) {
-  // Shared matcher, also used by the native mobile shell.
-  const session = migrateSession(s)
-  return searchSessionMessages(session, query).map((m) => migrateMessage(m))
-}
-
-const SEARCH_PAGE_SIZE = 30
-const SEARCH_RESULT_LIMIT = 50
-
-export async function searchSessions(searchInput: string, sessionId?: string, onResult?: (result: Session[]) => void) {
-  let matchedMessageTotal = 0
-
-  const emitBatch = (batch: Session[]) => {
-    if (batch.length === 0) {
-      return
-    }
-    onResult?.(batch)
-  }
-
-  if (sessionId) {
-    const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionId), null)
-    if (session) {
-      const matchedMessages = _searchSessions(searchInput, session)
-      matchedMessageTotal += matchedMessages.length
-      emitBatch([{ ...session, messages: matchedMessages }])
-    }
-    return
-  }
-
-  const metaStorage = await getMetaStorage()
-  let cursor: number | null = 0
-
-  while (cursor !== null) {
-    const page = await metaStorage.getPage(cursor, SEARCH_PAGE_SIZE)
-
-    // Load full sessions for this page in parallel to amortize I/O latency.
-    const sessions = await Promise.all(
-      page.items.map((meta) => storage.getItem<Session | null>(StorageKeyGenerator.session(meta.id), null))
-    )
-
-    const batch: Session[] = []
-    for (const session of sessions) {
-      if (!session) continue
-      const messages = _searchSessions(searchInput, session)
-      if (messages.length === 0) continue
-      matchedMessageTotal += messages.length
-      batch.push({ ...session, messages })
-    }
-    emitBatch(batch)
-
-    if (matchedMessageTotal >= SEARCH_RESULT_LIMIT) {
-      break
-    }
-
-    cursor = page.nextCursor
-    if (cursor !== null) {
-      // Yield to the event loop so the UI can render progressive results
-      // before we start scanning the next page.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
-  }
-}
-
-export function getCurrentThreadHistoryHash(s: Session) {
-  const ret: { [firstMessageId: string]: SessionThreadBrief } = {}
-  if (s.threads) {
-    for (const thread of s.threads) {
-      if (!thread.messages || thread.messages.length === 0) {
-        continue
-      }
-      ret[thread.messages[0].id] = {
-        id: thread.id,
-        name: thread.name,
-        createdAt: thread.createdAt,
-        createdAtLabel: new Date(thread.createdAt).toLocaleString(),
-        firstMessageId: thread.messages[0].id,
-        messageCount: thread.messages.length,
-      }
-    }
-    if (s.messages && s.messages.length > 0) {
-      ret[s.messages[0].id] = {
-        id: s.id,
-        name: s.threadName || '',
-        firstMessageId: s.messages[0].id,
-        messageCount: s.messages.length,
-      }
-    }
-  }
-  return ret
-}
-
-export function getAllMessageList(s: Session) {
-  let messageContext: Message[] = []
-  if (s.threads) {
-    for (const thread of s.threads) {
-      messageContext = messageContext.concat(thread.messages)
-    }
-  }
-  if (s.messages) {
-    messageContext = messageContext.concat(s.messages)
-  }
-  return messageContext
+export async function searchSessions(searchInput: string, options: SessionSearchOptions = {}) {
+  return new SessionSearchService(rendererApplication.sessions).search(searchInput, {
+    ...options,
+    hideSystemPromptMessage: (header) =>
+      (typeof options.hideSystemPromptMessage === 'function'
+        ? options.hideSystemPromptMessage(header)
+        : Boolean(options.hideSystemPromptMessage)) ||
+      !isActionAvailableInMode(
+        'session-system-prompt',
+        resolveSessionMode(getSessionAgentModeEntry(header.id, header).value)
+      ),
+  })
 }

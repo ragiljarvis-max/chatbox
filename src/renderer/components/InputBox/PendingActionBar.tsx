@@ -1,11 +1,13 @@
 import {
+  APPROVAL_RESPONSE_TIMEOUT_MS,
+  type ApprovalDenyReason,
   type ApprovalPauseReason,
   listPendingPauseInteractions,
   type PendingPauseInteraction,
 } from '@chatbox/core/message-approval'
-import { Box, Button, Group, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
-import { TestId } from '@shared/automation/testids'
-import type { ImageGenerationApprovalDetails, Session } from '@shared/types'
+import { Box, Button, Checkbox, Group, Loader, Menu, Spoiler, Text, UnstyledButton } from '@mantine/core'
+import { AutomationStateAttr, TestId } from '@shared/automation/testids'
+import type { ImageGenerationApprovalDetails, Message } from '@shared/types'
 import {
   IconAlertCircle,
   IconArrowUp,
@@ -15,17 +17,42 @@ import {
   IconPlayerPause,
   IconX,
 } from '@tabler/icons-react'
+import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { type FC, type MouseEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
+import { rendererApplication } from '@/app/renderer-application'
+import { ImageGenerationResultGallery } from '@/components/chat/ImageGenerationResultGallery'
+import LinkTargetBlank from '@/components/common/Link'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_TINT_CLASS } from '@/lib/glass-surface'
 import { getLogger } from '@/lib/utils'
-import { formatComputePointsRemainingRatio } from '@/packages/chatbox-cli/compute-points'
+import {
+  formatComputePointsRemainingRatio,
+  getComputePointsRemainingRatio,
+} from '@/packages/chatbox-cli/compute-points'
+import {
+  getImagePointsCharge,
+  type ImagePointsCharge,
+  imagePointsChargeNeeded,
+  hasImagePointsConsent,
+  refreshImageLicense,
+  remainingImageQuota,
+  withImagePointsApproval,
+} from '@/packages/image-points-billing'
 import { getFileMutationDisplayStats } from '@/packages/model-calls/toolsets/file-mutation-stats'
+import { buildChatboxUrl, getChatboxAIModelList } from '@/packages/remote'
 import { pulsePendingActionBar, revealPausedStep, usePendingActionBarPulseToken } from '@/stores/approvalAttentionStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
-import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SURFACE_STYLE } from './inputSurface'
+import { FileEditPreview } from './FileEditPreview'
+import {
+  INPUT_PAYLOAD_MAX_HEIGHT,
+  INPUT_SURFACE_CLASS_NAME,
+  INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME,
+  INPUT_SURFACE_STYLE,
+} from './inputSurface'
 
 // Every "the agent is waiting on a user decision" interaction renders here —
 // approvals (command / escalation / file / app action) and the tool-call-limit
@@ -36,7 +63,7 @@ import { INPUT_SURFACE_CLASS_NAME, INPUT_SURFACE_MIN_HEIGHT_CLASS_NAME, INPUT_SU
 
 const log = getLogger('pending-action-bar')
 
-const PAYLOAD_MAX_HEIGHT = 'min(200px, 30vh)'
+const PAYLOAD_MAX_HEIGHT = INPUT_PAYLOAD_MAX_HEIGHT
 /** Explanations taller than this (px) start collapsed behind "Show more". */
 const EXPLANATION_SPOILER_HEIGHT = 44
 /** Above this, the segment strip turns into just the k/N counter. */
@@ -49,6 +76,9 @@ const MAX_PROGRESS_SEGMENTS = 6
  * prompts use). Exported for tests.
  */
 export const PENDING_ACTION_ARMING_MS = 300
+/** The countdown turns red and shows its seconds from this point on. */
+const APPROVAL_COUNTDOWN_URGENT_MS = 10_000
+const APPROVAL_COUNTDOWN_TICK_MS = 250
 
 type PendingAction = 'approve' | 'deny' | 'continue' | 'stop'
 
@@ -59,14 +89,6 @@ function isResolveAction(action: PendingAction): boolean {
 function getInteractionKey(interaction: PendingPauseInteraction): string {
   const pauseType = interaction.kind === 'approval' ? interaction.pauseReason.type : interaction.kind
   return JSON.stringify([interaction.messageId, interaction.toolCallId, pauseType])
-}
-
-function getActiveConversationKey(session: Session): string {
-  const activeForkPath = session.messages.flatMap((message) => {
-    const fork = session.messageForksHash?.[message.id]
-    return fork ? [[message.id, fork.position] as const] : []
-  })
-  return JSON.stringify([session.messages[0]?.id ?? session.id, activeForkPath])
 }
 
 function getImageGenerationDetails(pauseReason: ApprovalPauseReason): ImageGenerationApprovalDetails | undefined {
@@ -85,7 +107,7 @@ function getWorkdir(interaction: PendingPauseInteraction): string | undefined {
 
 const PayloadBlock: FC<{ children: string; mono?: boolean }> = ({ children, mono = true }) => (
   <Box
-    className="rounded-md bg-chatbox-background-primary px-2.5 py-2"
+    className={`rounded-md bg-chatbox-background-primary px-2.5 py-2 ${GLASS_TINT_CLASS}`}
     style={{
       maxHeight: PAYLOAD_MAX_HEIGHT,
       overflow: 'auto',
@@ -107,12 +129,16 @@ const MutedText: FC<{ children: string }> = ({ children }) => (
   </Text>
 )
 
+type ExplanationToggle = { expanded: boolean; onExpandedChange: (expanded: boolean) => void }
+
 /** Model-written rationale: two lines by default, expandable in place. */
-const ExplanationText: FC<{ children: string }> = ({ children }) => {
+const ExplanationText: FC<{ children: string } & ExplanationToggle> = ({ children, expanded, onExpandedChange }) => {
   const { t } = useTranslation()
   return (
     <Spoiler
       maxHeight={EXPLANATION_SPOILER_HEIGHT}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
       showLabel={t('Show more')}
       hideLabel={t('Show less')}
       styles={{ control: { fontSize: 'var(--mantine-font-size-xs)' } }}
@@ -122,46 +148,119 @@ const ExplanationText: FC<{ children: string }> = ({ children }) => {
   )
 }
 
-const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails }> = ({ details }) => {
+type ImageApprovalQuota = Pick<ImageGenerationApprovalDetails, 'imageQuota' | 'computePointsRemainingRatio'> & {
+  /** Present only when this request spends compute points. */
+  pointsCharge?: ImagePointsCharge
+  pointsAllowed?: boolean
+}
+
+const ImageGenerationApprovalBody: FC<{ details: ImageGenerationApprovalDetails; quota?: ImageApprovalQuota }> = ({
+  details,
+  quota,
+}) => {
   const { t, i18n } = useTranslation()
   const usesChatboxQuota = details.billing === 'chatbox_quota'
-  const computePointsRemainingRatio = details.computePointsRemainingRatio ?? details.computePointsRemaining
+  const computePointsRemainingRatio = quota?.computePointsRemainingRatio
+  const pointsCharge = usesChatboxQuota ? quota?.pointsCharge : undefined
+  // `quota` is present only after a successful live refresh; until then the card stays on the points variant.
+  const quotaCoversRequest =
+    usesChatboxQuota && !pointsCharge && quota?.imageQuota !== undefined && quota.imageQuota.remaining >= details.count
+  const quotaUsedFirst = pointsCharge && quota?.imageQuota ? quota.imageQuota.remaining : 0
 
   return (
     <>
       <PayloadBlock mono={false}>{details.prompt}</PayloadBlock>
+      {!!details.referenceImages?.length && (
+        <div>
+          <Text size="xs" c="chatbox-tertiary">
+            {t('Reference images')}
+          </Text>
+          <ImageGenerationResultGallery images={details.referenceImages} compact />
+        </div>
+      )}
       <Group gap="md" wrap="wrap">
         <Text size="xs" c="chatbox-tertiary">
           {t('Number of images')}: {details.count}
           {details.aspectRatio ? ` · ${details.aspectRatio}` : ''}
           {details.style ? ` · ${details.style}` : ''}
         </Text>
-        <Text size="xs" c="chatbox-tertiary">
-          {usesChatboxQuota
-            ? t('This request will consume {{count}} image quota and compute points.', { count: details.count })
-            : t('This request may incur charges from {{provider}}.', { provider: details.provider })}
-        </Text>
-        {usesChatboxQuota && details.imageQuota && (
+        {pointsCharge?.sufficient ? (
+          <Text size="xs" fw={600} c="chatbox-primary">
+            {quotaUsedFirst > 0
+              ? t(
+                  quota?.pointsAllowed
+                    ? 'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.'
+                    : 'This request will use {{quota}} image quota first, then charge {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  {
+                    quota: quotaUsedFirst.toLocaleString(),
+                    images: pointsCharge.chargedImages.toLocaleString(),
+                    points: pointsCharge.pointsPerImage.toLocaleString(),
+                    total: pointsCharge.totalPoints.toLocaleString(),
+                  }
+                )
+              : t(
+                  quota?.pointsAllowed
+                    ? 'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Already allowed to use compute points.'
+                    : 'This request will use compute points: {{images}} × {{points}} points/image = {{total}} points. Approving confirms this charge.',
+                  {
+                    images: pointsCharge.chargedImages.toLocaleString(),
+                    points: pointsCharge.pointsPerImage.toLocaleString(),
+                    total: pointsCharge.totalPoints.toLocaleString(),
+                  }
+                )}
+          </Text>
+        ) : pointsCharge ? (
+          <Text size="xs" c="chatbox-error">
+            {t('Insufficient points')}
+          </Text>
+        ) : (
+          <Text size="xs" c="chatbox-tertiary">
+            {!usesChatboxQuota
+              ? t('This request may incur charges from {{provider}}.', { provider: details.provider })
+              : quotaCoversRequest
+                ? t('This request will consume {{count}} image quota.', { count: details.count })
+                : quota
+                  ? t(
+                      'Image quota is used first. Once it runs out, you can use compute points to generate more images.'
+                    )
+                  : t(
+                      'This request may use remaining image quota first, with any additional images charged in compute points.'
+                    )}
+          </Text>
+        )}
+        {usesChatboxQuota && quota?.imageQuota && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Image quota remaining: {{remaining}} / {{total}}', {
-              remaining: details.imageQuota.remaining.toLocaleString(),
-              total: details.imageQuota.total.toLocaleString(),
+              remaining: quota.imageQuota.remaining.toLocaleString(),
+              total: quota.imageQuota.total.toLocaleString(),
             })}
           </Text>
         )}
-        {usesChatboxQuota && computePointsRemainingRatio !== undefined && (
+        {usesChatboxQuota && !quotaCoversRequest && computePointsRemainingRatio !== undefined && (
           <Text size="xs" c="chatbox-tertiary">
             {t('Compute points remaining: {{points}}', {
-              points: formatComputePointsRemainingRatio(computePointsRemainingRatio, i18n.language),
+              points: pointsCharge
+                ? pointsCharge.availablePoints.toLocaleString()
+                : formatComputePointsRemainingRatio(computePointsRemainingRatio, i18n.language),
             })}
           </Text>
         )}
       </Group>
+      {usesChatboxQuota && !quotaCoversRequest && (
+        <Text size="xs" c="chatbox-tertiary">
+          {t('For detailed points usage, see')}{' '}
+          <LinkTargetBlank
+            href={buildChatboxUrl(`/${i18n.language.startsWith('zh') ? 'zh' : 'en'}/model-pricing#image-models`)}
+          >
+            {t('Model pricing')}
+          </LinkTargetBlank>
+        </Text>
+      )}
     </>
   )
 }
 
-/** File approvals show magnitude only; the exact diff is intentionally omitted. */
+/** File edits expose the bounded diff associated with the approved version. */
 const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: 'file_mutation_approval' }> }> = ({
   pauseReason,
 }) => {
@@ -169,42 +268,52 @@ const FileMutationBody: FC<{ pauseReason: Extract<ApprovalPauseReason, { type: '
   // Legacy pauses recover the counts by diffing the persisted preview — memoized
   // so acting/pulse re-renders don't redo that work.
   const stats = useMemo(() => getFileMutationDisplayStats(pauseReason), [pauseReason])
-  if (!stats) return null
-  const approximation = stats.approximate ? '~' : ''
+  const approximation = stats?.approximate ? '~' : ''
 
   return (
-    <Group gap={8} wrap="nowrap">
-      {stats.mode === 'write' ? (
-        <Text size="xs" c="chatbox-tertiary">
-          {stats.approximate && '~ '}
-          {t('Writing {{count}} lines', { count: stats.addedLines })}
-        </Text>
-      ) : (
-        <Text size="xs" className="tabular-nums">
-          <span style={{ color: 'var(--chatbox-tint-success)' }}>
-            {approximation}+{stats.addedLines}
-          </span>{' '}
-          <span style={{ color: 'var(--chatbox-tint-error)' }}>
-            {approximation}-{stats.removedLines}
-          </span>
-        </Text>
+    <>
+      {stats && (
+        <Group gap={8} wrap="nowrap">
+          {stats.mode === 'write' ? (
+            <Text size="xs" c="chatbox-tertiary">
+              {stats.approximate && '~ '}
+              {t('Writing {{count}} lines', { count: stats.addedLines })}
+            </Text>
+          ) : (
+            <Text size="xs" className="tabular-nums">
+              <span style={{ color: 'var(--chatbox-tint-success)' }}>
+                {approximation}+{stats.addedLines}
+              </span>{' '}
+              <span style={{ color: 'var(--chatbox-tint-error)' }}>
+                {approximation}-{stats.removedLines}
+              </span>
+            </Text>
+          )}
+        </Group>
       )}
-    </Group>
+      {pauseReason.editPreview && (pauseReason.preview || pauseReason.editPreview.diffTruncated) && (
+        <FileEditPreview preview={pauseReason.preview} incomplete={pauseReason.editPreview.diffTruncated} />
+      )}
+    </>
   )
 }
 
 /** Body only — what the decision is about lives in the heading. */
-const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason }> = ({ pauseReason }) => {
+const ApprovalBody: FC<{
+  pauseReason: ApprovalPauseReason
+  explanation: ExplanationToggle
+  imageQuota?: ImageApprovalQuota
+}> = ({ pauseReason, explanation, imageQuota }) => {
   const { t } = useTranslation()
   const imageDetails = getImageGenerationDetails(pauseReason)
-  if (imageDetails) return <ImageGenerationApprovalBody details={imageDetails} />
+  if (imageDetails) return <ImageGenerationApprovalBody details={imageDetails} quota={imageQuota} />
 
   switch (pauseReason.type) {
     case 'user_exec_approval':
       return (
         <>
           <PayloadBlock>{pauseReason.command}</PayloadBlock>
-          {pauseReason.explanation && <ExplanationText>{pauseReason.explanation}</ExplanationText>}
+          {pauseReason.explanation && <ExplanationText {...explanation}>{pauseReason.explanation}</ExplanationText>}
           {pauseReason.explanationError && (
             <Text size="xs" c="chatbox-tertiary">
               {t('Explanation failed')}
@@ -216,7 +325,7 @@ const ApprovalBody: FC<{ pauseReason: ApprovalPauseReason }> = ({ pauseReason })
       return (
         <>
           <PayloadBlock>{pauseReason.command}</PayloadBlock>
-          <ExplanationText>{pauseReason.justification}</ExplanationText>
+          <ExplanationText {...explanation}>{pauseReason.justification}</ExplanationText>
         </>
       )
     case 'file_mutation_approval':
@@ -253,12 +362,91 @@ const PendingProgress: FC<{ current: number; total: number }> = ({ current, tota
   </Group>
 )
 
+type ApprovalCountdown = { remainingMs: number; paused: boolean }
+
+/**
+ * Time left before an unanswered approval is denied. Counts only while `running`
+ * and restarts at the full timeout whenever `key` (the displayed decision) changes.
+ */
+function useApprovalCountdown(key: string | undefined, running: boolean, onExpire: () => void): number {
+  const [state, setState] = useState({ key, remainingMs: APPROVAL_RESPONSE_TIMEOUT_MS })
+  const remainingMs = state.key === key ? state.remainingMs : APPROVAL_RESPONSE_TIMEOUT_MS
+
+  useEffect(() => {
+    if (!running) return
+    let last = Date.now()
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - last
+      last = now
+      setState((prev) => ({
+        key,
+        remainingMs: Math.max(0, (prev.key === key ? prev.remainingMs : APPROVAL_RESPONSE_TIMEOUT_MS) - elapsed),
+      }))
+    }, APPROVAL_COUNTDOWN_TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [key, running])
+
+  const onExpireRef = useRef(onExpire)
+  onExpireRef.current = onExpire
+  const expiredKeyRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!running || remainingMs > 0 || expiredKeyRef.current === key) return
+    expiredKeyRef.current = key
+    onExpireRef.current()
+  }, [key, running, remainingMs])
+
+  return remainingMs
+}
+
+/** Paused while the user reads the explanation; seconds appear only near the end. */
+const CountdownHint: FC<{ countdown: ApprovalCountdown }> = ({ countdown }) => {
+  const { t } = useTranslation()
+  if (countdown.paused) {
+    return (
+      <Text data-testid={TestId.toolCall.actionBarCountdown} size="xs" c="chatbox-tertiary" className="tabular-nums">
+        {t('Countdown paused')}
+      </Text>
+    )
+  }
+  if (countdown.remainingMs > APPROVAL_COUNTDOWN_URGENT_MS) return null
+  return (
+    <Text data-testid={TestId.toolCall.actionBarCountdown} size="xs" c="chatbox-error" className="tabular-nums">
+      {t('Auto-deny in {{count}}s', { count: Math.ceil(countdown.remainingMs / 1000) })}
+    </Text>
+  )
+}
+
+/** 2px line along the bottom edge that drains as the approval timeout runs out. */
+const CountdownLine: FC<{ remainingMs: number }> = ({ remainingMs }) => {
+  const urgent = remainingMs <= APPROVAL_COUNTDOWN_URGENT_MS
+  return (
+    <Box
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+      style={{ borderRadius: 'inherit' }}
+      aria-hidden
+    >
+      <Box
+        className="absolute bottom-0 left-0"
+        style={{
+          height: 2,
+          borderRadius: '0 2px 2px 0',
+          width: `${(remainingMs / APPROVAL_RESPONSE_TIMEOUT_MS) * 100}%`,
+          backgroundColor: urgent ? 'var(--chatbox-tint-error)' : 'var(--chatbox-tint-warning)',
+          transition: `width ${APPROVAL_COUNTDOWN_TICK_MS}ms linear, background-color 200ms ease`,
+        }}
+      />
+    </Box>
+  )
+}
+
 const PendingHeading: FC<{
   interaction: PendingPauseInteraction
   progress: { current: number; total: number } | null
   progressKey: number
+  countdown: ApprovalCountdown | null
   onView: () => void
-}> = ({ interaction, progress, progressKey, onView }) => {
+}> = ({ interaction, progress, progressKey, countdown, onView }) => {
   const { t } = useTranslation()
 
   let Icon = IconAlertCircle
@@ -305,6 +493,7 @@ const PendingHeading: FC<{
         </Text>
       )}
       <Group gap={10} wrap="nowrap" className="ml-auto shrink-0">
+        {countdown && <CountdownHint countdown={countdown} />}
         {progress && (
           <Box key={progressKey} className="chatbox-action-progress-pop">
             <PendingProgress current={progress.current} total={progress.total} />
@@ -324,15 +513,53 @@ const PendingHeading: FC<{
   )
 }
 
-type PendingActionBarProps = { session: Session }
+type PendingActionBarProps = { sessionId: string; activeThreadId: string; messageIds: readonly string[] }
+type PendingActionContentProps = { sessionId: string; message: Message }
 
-const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
+const PendingActionBarContent: FC<PendingActionContentProps> = ({ sessionId, message }) => {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
-  const interactions = useMemo(() => listPendingPauseInteractions(session.messages), [session.messages])
+  const interactions = useMemo(() => listPendingPauseInteractions([message]), [message])
   const interactionKeys = useMemo(() => interactions.map(getInteractionKey), [interactions])
   const current: PendingPauseInteraction | undefined = interactions[0]
   const currentKey = current ? getInteractionKey(current) : undefined
+  const licenseKey = useSettingsStore((state) => state.licenseKey ?? '')
+  const language = useSettingsStore((state) => state.language)
+  const imageDetails = current?.kind === 'approval' ? getImageGenerationDetails(current.pauseReason) : undefined
+  const needsImageQuota = imageDetails?.provider === 'chatbox-ai'
+  const imageQuota = useQuery({
+    queryKey: ['work-image-approval-quota', sessionId, currentKey, licenseKey],
+    enabled: needsImageQuota,
+    queryFn: async ({ signal }): Promise<ImageApprovalQuota> => {
+      if (!licenseKey) throw new Error('Missing license')
+      const detail = await refreshImageLicense(licenseKey, signal)
+      const quota: ImageApprovalQuota = {
+        imageQuota: { remaining: remainingImageQuota(detail), total: detail.image_total_quota },
+        computePointsRemainingRatio: getComputePointsRemainingRatio(detail),
+      }
+      // Same charge condition as authorizeImagePoints, so Approve is consent to exactly this charge.
+      const quantity = imageDetails?.count || 1
+      if (imageDetails && imagePointsChargeNeeded(detail, quantity)) {
+        const models = await getChatboxAIModelList({ licenseKey, language }, signal)
+        const price = models.imageModels.find((model) => model.modelId === imageDetails.modelId)?.points_per_image
+        quota.pointsCharge = getImagePointsCharge(detail, quantity, price)
+        quota.pointsAllowed = await hasImagePointsConsent(licenseKey)
+      }
+      return quota
+    },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+  const imageQuotaUnavailable = needsImageQuota && (imageQuota.isFetching || imageQuota.isError || !imageQuota.data)
+  const pointsChoiceKey = JSON.stringify([currentKey, licenseKey])
+  const [pointsChoice, setPointsChoice] = useState({ key: pointsChoiceKey, alwaysAllow: false })
+  if (pointsChoice.key !== pointsChoiceKey) setPointsChoice({ key: pointsChoiceKey, alwaysAllow: false })
+  const offersAlwaysAllowPoints =
+    !imageQuotaUnavailable && imageQuota.data?.pointsCharge?.sufficient === true && !imageQuota.data.pointsAllowed
+  const alwaysAllowPoints = offersAlwaysAllowPoints && pointsChoice.key === pointsChoiceKey && pointsChoice.alwaysAllow
 
   // Input protection: (re)arm whenever the displayed decision changes, including
   // first mount. Written during render so no click can land before an effect runs.
@@ -340,6 +567,14 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   if (!armingRef.current || armingRef.current.key !== currentKey) {
     armingRef.current = { key: currentKey, until: Date.now() + PENDING_ACTION_ARMING_MS }
   }
+  const [isArmed, setIsArmed] = useState(false)
+  useEffect(() => {
+    setIsArmed(false)
+    const timer = window.setTimeout(() => {
+      if (armingRef.current?.key === currentKey) setIsArmed(true)
+    }, PENDING_ACTION_ARMING_MS)
+    return () => window.clearTimeout(timer)
+  }, [currentKey])
 
   // Progress across a review episode: total holds steady while items resolve, so
   // acting reads 1/3 → 2/3 → 3/3 instead of always showing "1 of what's left".
@@ -360,6 +595,11 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
       const removed = prev.pendingKeys.filter((key) => !next.has(key)).length
       const added = interactionKeys.filter((key) => !previous.has(key)).length
       if (removed === 0 && added === 0) return prev
+      const callIdentity = (key: string) => JSON.stringify((JSON.parse(key) as [string, string, string]).slice(0, 2))
+      const previousCalls = new Set(prev.pendingKeys.map(callIdentity))
+      if (added > 0 && interactionKeys.every((key) => !previousCalls.has(callIdentity(key)))) {
+        return { total: interactionKeys.length, done: 0, pendingKeys: interactionKeys }
+      }
 
       return {
         total: prev.total + added,
@@ -395,17 +635,56 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   const initialPulseTokenRef = useRef(pulseToken)
   const showPulse = pulseToken > initialPulseTokenRef.current
 
+  // Reading the full explanation pauses the approval countdown.
+  const [expandedExplanationKey, setExpandedExplanationKey] = useState<string | null>(null)
+  const isExplanationExpanded = currentKey !== undefined && expandedExplanationKey === currentKey
+  const isActing = acting?.interactionKey === currentKey
+  const hasCountdown = current?.kind === 'approval'
+  const countdownRemainingMs = useApprovalCountdown(
+    currentKey,
+    hasCountdown && !isExplanationExpanded && !isActing && !imageQuotaUnavailable,
+    () => {
+      if (current?.kind === 'approval') runAction(current, 'deny', 'timeout')
+    }
+  )
+
   if (!current) return null
 
-  const runAction = (interaction: PendingPauseInteraction, action: PendingAction) => {
+  function runAction(
+    interaction: PendingPauseInteraction,
+    action: PendingAction,
+    denyReason: ApprovalDenyReason = 'user'
+  ) {
     if (acting) return
+    if (isResolveAction(action) && imageQuotaUnavailable) return
     if (Date.now() < (armingRef.current?.until ?? 0)) return
     const interactionKey = getInteractionKey(interaction)
     lastActionRef.current = action
     setActing({ interactionKey, action })
+    const imageDetails =
+      interaction.kind === 'approval' ? getImageGenerationDetails(interaction.pauseReason) : undefined
+    const continueGeneration = () =>
+      currentGenerationService.continuePausedToolCall(sessionId, interaction.messageId, interaction.toolCallId)
     const request = isResolveAction(action)
-      ? currentGenerationService.continuePausedToolCall(session.id, interaction.messageId, interaction.toolCallId)
-      : currentGenerationService.stopPausedToolCall(session.id, interaction.messageId, interaction.toolCallId)
+      ? imageDetails?.provider === 'chatbox-ai'
+        ? withImagePointsApproval(
+            {
+              prompt: imageDetails.prompt,
+              referenceImages: imageDetails.referenceImages ?? [],
+              model: { provider: imageDetails.provider, modelId: imageDetails.modelId },
+              imageGenerateNum: imageDetails.count,
+              aspectRatio: imageDetails.aspectRatio,
+              dalleStyle: imageDetails.style,
+              source: { type: 'chatbox_cli', sessionId, toolCallId: interaction.toolCallId },
+            },
+            licenseKey,
+            alwaysAllowPoints,
+            continueGeneration
+          )
+        : continueGeneration()
+      : currentGenerationService.stopPausedToolCall(sessionId, interaction.messageId, interaction.toolCallId, {
+          denyReason,
+        })
     request
       .catch((error) => {
         log.error(`Failed to ${action} paused tool call:`, error)
@@ -423,7 +702,7 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
     setActing({ interactionKey, action: 'continue' })
     const count = interaction.maxToolCalls
     currentGenerationService
-      .disableToolCallLimitPauseAndContinue(session.id, interaction.messageId, interaction.toolCallId, scope)
+      .disableToolCallLimitPauseAndContinue(sessionId, interaction.messageId, interaction.toolCallId, scope)
       .then(() => {
         toastActions.add(
           scope === 'global'
@@ -446,17 +725,17 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
   // Clicks that miss the buttons are the user reaching for the input that this
   // bar replaced; pulse instead of silently swallowing them.
   const handleSurfaceClick = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('button, a, [role="menuitem"]')) return
+    if ((event.target as HTMLElement).closest('button, a, input, label, [role="menuitem"]')) return
     pulsePendingActionBar()
   }
 
-  const isActing = acting?.interactionKey === currentKey
   const isImageApproval = current.kind === 'approval' && getImageGenerationDetails(current.pauseReason) !== undefined
   const workdir = getWorkdir(current)
 
   return (
     <Box
       data-testid={TestId.toolCall.actionBar}
+      {...{ [AutomationStateAttr.actionBarArmed]: isArmed ? 'true' : 'false' }}
       onClickCapture={handleSurfaceClick}
       className={clsx(
         INPUT_SURFACE_CLASS_NAME,
@@ -465,6 +744,8 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
       )}
       style={INPUT_SURFACE_STYLE}
     >
+      {hasCountdown && <CountdownLine key={currentKey} remainingMs={countdownRemainingMs} />}
+
       {resolveFlash && (
         <Box
           key={resolveFlash.key}
@@ -493,16 +774,48 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
             episode.total > 1 ? { current: Math.min(episode.done + 1, episode.total), total: episode.total } : null
           }
           progressKey={episode.done}
-          onView={() => void revealPausedStep(session.id, current.messageId, current.toolCallId)}
+          countdown={hasCountdown ? { remainingMs: countdownRemainingMs, paused: isExplanationExpanded } : null}
+          onView={() => void revealPausedStep(sessionId, current.messageId, current.toolCallId)}
         />
         {current.kind === 'approval' ? (
-          <ApprovalBody pauseReason={current.pauseReason} />
+          <ApprovalBody
+            pauseReason={current.pauseReason}
+            imageQuota={imageQuotaUnavailable ? undefined : imageQuota.data}
+            explanation={{
+              expanded: isExplanationExpanded,
+              onExpandedChange: (expanded) => setExpandedExplanationKey(expanded ? (currentKey ?? null) : null),
+            }}
+          />
         ) : (
           <MutedText>
             {t('Paused after {{count}} steps. Check whether the task is on track, then continue or stop to adjust.', {
               count: current.maxToolCalls,
             })}
           </MutedText>
+        )}
+        {needsImageQuota && imageQuotaUnavailable && (
+          <Group gap="xs">
+            {imageQuota.isFetching ? <Loader size="xs" /> : null}
+            <Text size="xs" c="chatbox-secondary" role="status">
+              {imageQuota.isFetching
+                ? t('Loading license details...')
+                : t('Unable to check image billing. Please try again.')}
+            </Text>
+            {!imageQuota.isFetching && (
+              <Button variant="subtle" size="compact-xs" onClick={() => void imageQuota.refetch()}>
+                {t('Retry')}
+              </Button>
+            )}
+          </Group>
+        )}
+        {offersAlwaysAllowPoints && (
+          <Checkbox
+            size="xs"
+            label={t('Always allow this license to use compute points for images on this device')}
+            checked={alwaysAllowPoints}
+            disabled={Boolean(acting)}
+            onChange={(event) => setPointsChoice({ key: pointsChoiceKey, alwaysAllow: event.currentTarget.checked })}
+          />
         )}
       </Box>
 
@@ -587,7 +900,7 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
               leftSection={<IconCheck size={15} stroke={2.5} />}
               color="chatbox-brand"
               loading={isActing && acting?.action === 'approve'}
-              disabled={isActing && acting?.action !== 'approve'}
+              disabled={imageQuotaUnavailable || (isActing && acting?.action !== 'approve')}
               onClick={() => runAction(current, 'approve')}
             >
               {isImageApproval ? t('Approve and generate') : t('Approve')}
@@ -600,13 +913,13 @@ const PendingActionBarContent: FC<PendingActionBarProps> = ({ session }) => {
 }
 
 const PendingActionBar: FC<PendingActionBarProps> = (props) => {
-  // Checked here (cached per messages identity, shared with InputBox) so the
-  // conversation-key walk below only runs while a decision is actually showing.
-  if (listPendingPauseInteractions(props.session.messages).length === 0) return null
-  // InputBox stays mounted while switching historical threads or message forks.
-  // The first message distinguishes thread histories; active fork positions
-  // distinguish branches that intentionally share that prefix.
-  return <PendingActionBarContent key={getActiveConversationKey(props.session)} {...props} />
+  const { t } = useTranslation()
+  const query = rendererApplication.sessionHooks.useSessionMessage(props.sessionId, props.messageIds[0] ?? null)
+  if (!props.messageIds.length) return null
+  if (query.isLoading) return <Loader size="xs" />
+  if (query.isError) return <Button onClick={() => void query.refetch()}>{t('Try Again')}</Button>
+  if (!query.message || listPendingPauseInteractions([query.message]).length === 0) return null
+  return <PendingActionBarContent key={props.activeThreadId} sessionId={props.sessionId} message={query.message} />
 }
 
 export default memo(PendingActionBar)

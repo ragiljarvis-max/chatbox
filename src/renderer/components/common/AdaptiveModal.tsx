@@ -4,7 +4,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { Modal } from '../layout/Overlay'
+import { Modal, useOverlayManager } from '../layout/Overlay'
 
 export interface AdaptiveModalProps extends Omit<MantineModalProps, 'opened' | 'onClose'> {
   opened: boolean
@@ -13,27 +13,34 @@ export interface AdaptiveModalProps extends Omit<MantineModalProps, 'opened' | '
 
 export function AdaptiveModal({ opened, onClose, onExitTransitionEnd, children, title, ...props }: AdaptiveModalProps) {
   const isSmallScreen = useIsSmallScreen()
+  useOverlayManager(isSmallScreen && opened)
 
   if (isSmallScreen) {
     return (
-      <Drawer.Root
-        open={opened}
-        onOpenChange={(open) => !open && onClose()}
-        onAnimationEnd={(open) => !open && onExitTransitionEnd?.()}
-        noBodyStyles
-        repositionInputs={false}
-      >
+      <Drawer.Root open={opened} onOpenChange={(open) => !open && onClose()} noBodyStyles repositionInputs={false}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-          <Drawer.Content className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg">
+          <Drawer.Content
+            aria-describedby={undefined}
+            className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg"
+            onAnimationEnd={(event) => {
+              if (event.target === event.currentTarget && !opened) onExitTransitionEnd?.()
+            }}
+          >
             <Drawer.Handle />
             <Stack gap="md" p="sm" className="max-h-[85vh] overflow-y-auto">
               {title && typeof title === 'string' && (
-                <Text size="md" fw={600} className="text-center">
-                  {title}
-                </Text>
+                <Drawer.Title asChild>
+                  <Text size="md" fw={600} className="text-center">
+                    {title}
+                  </Text>
+                </Drawer.Title>
               )}
-              {title && typeof title !== 'string' && <div>{title}</div>}
+              {title && typeof title !== 'string' && (
+                <Drawer.Title asChild>
+                  <div>{title}</div>
+                </Drawer.Title>
+              )}
               {children}
             </Stack>
             <div className="h-[--mobile-safe-area-inset-bottom] min-h-4" />

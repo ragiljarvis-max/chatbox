@@ -10,11 +10,13 @@ export class BaseError extends Error {
 export const MESSAGE_ERROR_CODES = {
   CHATBOX_AI_QUOTA_EXHAUSTED: 10004,
   OCR_FAILED: 10006,
+  MODEL_PROVIDER_NOT_FOUND: 10007,
   CHATBOX_AI_FREE_QUOTA_EXHAUSTED: 20039,
   CHATBOX_AI_FREE_AGENT_MODE_QUOTA_EXHAUSTED: 20040,
   FILE_PREPROCESS_FAILED: 20041,
   FILE_STORAGE_QUOTA_EXCEEDED: 20042,
   EMPTY_ATTACHMENT_CONTENT: 20043,
+  IMAGE_POINTS_INSUFFICIENT: 20049,
   CHATBOX_AI_OCR_QUOTA_EXHAUSTED: 20044,
   CHATBOX_AI_FREE_OCR_QUOTA_EXHAUSTED: 20045,
 } as const
@@ -25,10 +27,12 @@ export class ApiError extends BaseError {
   public code = 10001
   public responseBody: string | undefined
   public statusCode: number | undefined
-  constructor(message: string, responseBody?: string, statusCode?: number, requestId?: string) {
+  public retryAfter: string | undefined
+  constructor(message: string, responseBody?: string, statusCode?: number, requestId?: string, retryAfter?: string) {
     super('API Error: ' + message, { requestId })
     this.responseBody = responseBody
     this.statusCode = statusCode
+    this.retryAfter = retryAfter
   }
 }
 
@@ -36,6 +40,9 @@ export class ApiError extends BaseError {
 // to auto-retry: the provider may have billed the partial generation, and the
 // partial text has already reached the UI, so a silent retry would duplicate it.
 export class MidStreamApiError extends ApiError {}
+
+/** The server may already have accepted this request; automatic replay is unsafe. */
+export class NonReplayableRequestError extends ApiError {}
 
 export class NetworkError extends BaseError {
   public code = 10002
@@ -57,6 +64,16 @@ export class AIProviderNoImplementedChatError extends BaseError {
   public code = 10005
   constructor(aiProvider: string) {
     super(`Current AI Provider ${aiProvider} Does Not Support Chat Completions API`)
+  }
+}
+
+/** The session references a provider that no longer exists (e.g. a deleted custom provider). */
+export class ModelProviderNotFoundError extends BaseError {
+  public code: number = MESSAGE_ERROR_CODES.MODEL_PROVIDER_NOT_FOUND
+  public providerId: string
+  constructor(providerId: string) {
+    super(`Model provider ${providerId} is no longer available. Please select another model.`)
+    this.providerId = providerId
   }
 }
 
@@ -92,6 +109,11 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'You have used up your monthly Chatbox AI quota. Please <OpenSettingButton>go to Settings</OpenSettingButton> to view your quota usage or upgrade your plan.',
     },
+    image_points_insufficient: {
+      name: 'image_points_insufficient',
+      code: MESSAGE_ERROR_CODES.IMAGE_POINTS_INSUFFICIENT,
+      i18nKey: 'Insufficient points',
+    },
     // 超出每日免费配额
     free_token_quota_exhausted: {
       name: 'free_token_quota_exhausted',
@@ -110,13 +132,19 @@ export class ChatboxAIAPIError extends BaseError {
       name: 'license_upgrade_required',
       code: 20001,
       i18nKey:
-        'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package. Alternatively, you can switch to a different model by <OpenSettingButton>accessing the settings</OpenSettingButton>.',
+        'Your current License (Chatbox AI Free/Lite) does not support the {{model}} model. To use this model, please <OpenMorePlanButton>upgrade</OpenMorePlanButton> to Chatbox AI Pro or a higher-tier package.',
     },
     // license 过期
     expired_license: {
       name: 'expired_license',
       code: 20002,
       i18nKey: 'Your license has expired. Please check your subscription or purchase a new one.',
+    },
+    license_downgraded: {
+      name: 'license_downgraded',
+      code: 20047,
+      i18nKey:
+        'Your plan has expired and has been automatically downgraded to the Free plan. Please refresh your license information and try again.',
     },
     // 未输入 license
     license_key_required: {
@@ -316,6 +344,23 @@ export class ChatboxAIAPIError extends BaseError {
       i18nKey:
         'MinerU API token is required. Please go to <OpenDocumentParserSettingButton>Settings</OpenDocumentParserSettingButton> and configure your MinerU API token.',
     },
+    deepseek_parser_api_key_required: {
+      name: 'deepseek_parser_api_key_required',
+      code: 20050,
+      i18nKey:
+        'You have selected DeepSeek as the document parser, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenDocumentParserSettingButton>document parser</OpenDocumentParserSettingButton>.',
+    },
+    deepseek_insufficient_balance: {
+      name: 'deepseek_insufficient_balance',
+      code: 20051,
+      i18nKey: 'Your DeepSeek account balance is insufficient. Please top up your DeepSeek account and try again.',
+    },
+    deepseek_parser_file_too_large: {
+      name: 'deepseek_parser_file_too_large',
+      code: 20052,
+      i18nKey:
+        'This file exceeds the DeepSeek document parsing limits (100 MiB and 1,000 pages). Please upload a smaller file.',
+    },
     document_parser_not_configured: {
       name: 'document_parser_not_configured',
       code: 20034,
@@ -339,6 +384,12 @@ export class ChatboxAIAPIError extends BaseError {
       code: 20036,
       i18nKey:
         'You have selected SearXNG as the search provider, but an instance URL has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your SearXNG instance URL, or choose a different search provider.',
+    },
+    deepseek_api_key_required: {
+      name: 'deepseek_api_key_required',
+      code: 20048,
+      i18nKey:
+        'You have selected DeepSeek as the search provider, but no DeepSeek API key is set up yet. Please <OpenDeepSeekProviderSettingButton>add it in the DeepSeek model provider settings</OpenDeepSeekProviderSettingButton>, or choose a different <OpenExtensionSettingButton>search provider</OpenExtensionSettingButton>.',
     },
     parse_link_failed: {
       name: 'parse_link_failed',

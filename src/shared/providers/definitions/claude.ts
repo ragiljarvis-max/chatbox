@@ -1,4 +1,4 @@
-import { createBearerOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createBearerOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import Claude from './models/claude'
@@ -9,6 +9,11 @@ export const claudeProvider = defineProvider({
   type: ModelProviderType.Claude,
   modelsDevProviderId: 'anthropic',
   curatedModelIds: [
+    'claude-fable-5-2',
+    'claude-fable-5-1',
+    'claude-opus-5-5',
+    'claude-sonnet-5-5',
+    'claude-haiku-5-5',
     'claude-fable-5',
     'claude-opus-5',
     'claude-sonnet-5',
@@ -26,6 +31,36 @@ export const claudeProvider = defineProvider({
     apiHost: 'https://api.anthropic.com/v1',
     // https://docs.anthropic.com/en/docs/about-claude/models/overview
     models: [
+      {
+        modelId: 'claude-fable-5-2',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'claude-fable-5-1',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'claude-opus-5-5',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'claude-sonnet-5-5',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
+      {
+        modelId: 'claude-haiku-5-5',
+        capabilities: ['vision', 'reasoning', 'tool_use'],
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      },
       {
         modelId: 'claude-fable-5',
         contextWindow: 1_000_000,
@@ -84,7 +119,7 @@ export const claudeProvider = defineProvider({
   },
   createModel: (config) => {
     // Anthropic OAuth tokens (sk-ant-oat-*) require Bearer auth + beta header + system passphrase
-    const isOAuth = config.providerSetting.activeAuthMode === 'oauth' && !!config.providerSetting.oauth?.accessToken
+    const isOAuth = isUsingOAuth(config.providerSetting, config.dependencies.platformType || 'desktop')
     const credentialManager = createOAuthCredentialManager(
       ModelProviderEnum.Claude,
       config.providerSetting,

@@ -1,4 +1,4 @@
-import { createBearerOAuthFetch, createOAuthCredentialManager } from '../../oauth'
+import { createBearerOAuthFetch, createOAuthCredentialManager, isUsingOAuth } from '../../oauth'
 import { ModelProviderEnum, ModelProviderType } from '../../types'
 import { defineProvider } from '../registry'
 import OpenAI from './models/openai'
@@ -24,6 +24,11 @@ function createMiniMaxProvider(config: {
     defaultSettings: {
       apiHost: config.apiHost,
       models: [
+        {
+          modelId: 'MiniMax-M3.1-Flash',
+          capabilities: ['vision', 'reasoning', 'tool_use'],
+          contextWindow: 1_000_000,
+        },
         {
           modelId: 'MiniMax-M3',
           capabilities: ['vision', 'reasoning', 'tool_use'],
@@ -52,8 +57,7 @@ function createMiniMaxProvider(config: {
       ],
     },
     createModel: (createConfig) => {
-      const isOAuth =
-        createConfig.providerSetting.activeAuthMode === 'oauth' && !!createConfig.providerSetting.oauth?.accessToken
+      const isOAuth = isUsingOAuth(createConfig.providerSetting, createConfig.dependencies.platformType || 'desktop')
       const credentialManager = createOAuthCredentialManager(
         config.id,
         createConfig.providerSetting,

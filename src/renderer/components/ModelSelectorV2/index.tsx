@@ -1,3 +1,4 @@
+import NiceModal from '@ebay/nice-modal-react'
 import { Combobox, Flex, SegmentedControl, Stack, Text, TextInput, useCombobox } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { ModelProviderEnum } from '@shared/types'
@@ -19,14 +20,20 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
-import { trackListModelClick, trackSelectModelClick, trackUpgradeModelClick } from '@/analytics/model-selection'
+import {
+  trackListModelClick,
+  trackProTrialClaimClick,
+  trackSelectModelClick,
+  trackUpgradeModelClick,
+} from '@/analytics/model-selection'
 import useChatboxAIModels from '@/hooks/useChatboxAIModels'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { GLASS_HOST_CLASS } from '@/lib/glass-surface'
 import { collapsedProvidersAtom } from '@/stores/atoms/uiAtoms'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useUIStore } from '@/stores/uiStore'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { filterModelsForSelector } from '../ModelSelector/filterModels'
 import { ChatboxProviderRows } from './ChatboxProviderRows'
 import { buildChatboxAIGroupViews, modelMatchesSearch } from './chatboxCatalog'
 import {
@@ -37,14 +44,17 @@ import {
   DESKTOP_DETAIL_VIEWPORT_MARGIN,
   DRAWER_SURFACE_STYLE,
   EMPTY_MODEL_IDS,
+  getModelSelectorFloatingSurfaceClass,
   HOVER_CLASS,
   MODEL_SELECTOR_SURFACE_CLASS,
   SELECTED_CLASS,
 } from './constants'
 import { DetailCard } from './DetailCard'
+import { filterModelsForSelector } from './filterModels'
 import { GenericProviderRows } from './GenericProviderRows'
 import { searchGenericModel, toProviderModelInfo } from './helpers'
 import type { ChatboxAIModel, DesktopDetailState, DetailModel, ModelSelectorV2Props } from './types'
+import { useChatboxAIProTrial } from './useChatboxAIProTrial'
 
 export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
   (
@@ -68,12 +78,14 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
     const isMobile = useIsSmallScreen()
     const { providers, favoritedModels, favoriteModel, unfavoriteModel, isFavoritedModel } = useProviders()
     const { chatboxAIModelList, chatboxAIModels } = useChatboxAIModels()
+    const proTrial = useChatboxAIProTrial(chatboxAIModelList?.license)
     const favoritedModelsSetting = useSettingsStore((state) => state.favoritedModels)
     const chatboxAIExcludedModels = useSettingsStore(
       (state) => state.providers?.[ModelProviderEnum.ChatboxAI]?.excludedModels || EMPTY_MODEL_IDS
     )
     const [collapsedProviders, setCollapsedProviders] = useAtom(collapsedProvidersAtom)
-    const [activeTab, setActiveTab] = useState('all')
+    const activeTab = useUIStore((state) => state.modelSelectorTab)
+    const setActiveTab = useUIStore((state) => state.setModelSelectorTab)
     const [search, setSearch] = useState('')
     const [mobileOpen, setMobileOpen] = useState(false)
     const [advancedExpanded, setAdvancedExpanded] = useState(false)
@@ -172,19 +184,18 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
       [chatboxAIExcludedModels, modelFilter]
     )
 
-    const chatboxGroups = useMemo(() => {
-      if (!chatboxAIModelList) return []
-      return buildChatboxAIGroupViews({
-        catalog: chatboxAIModelList,
-        search,
-        expandedAdvanced: advancedExpanded,
-        collapsedGroupIds,
-        modelFilter: (modelId) => {
-          const model = chatboxAIModelList.models[modelId]
-          return model ? chatboxFilter(model) : false
-        },
-      })
-    }, [advancedExpanded, chatboxAIModelList, collapsedGroupIds, search, chatboxFilter])
+    const chatboxGroups = chatboxAIModelList
+      ? buildChatboxAIGroupViews({
+          catalog: chatboxAIModelList,
+          search,
+          expandedAdvanced: advancedExpanded,
+          collapsedGroupIds,
+          modelFilter: (modelId) => {
+            const model = chatboxAIModelList.models[modelId]
+            return model ? chatboxFilter(model) : false
+          },
+        })
+      : []
 
     const clearDesktopDetailCloseTimer = () => {
       if (desktopDetailCloseTimerRef.current) {
@@ -242,6 +253,17 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         trackSelectModelClick(pageName, modelId, 'success')
       }
       onSelect?.(providerId, modelId)
+    }
+
+    const claimProTrial = (position: 'list_model' | 'upgrade_modal', modelId?: string) => {
+      // The claim dialog must not open underneath the selector dropdown or drawer.
+      clearDesktopDetailCloseTimer()
+      setDesktopDetail(null)
+      combobox.closeDropdown()
+      setMobileOpen(false)
+      setMobileDetail(null)
+      if (pageName) trackProTrialClaimClick(pageName, position, modelId)
+      void NiceModal.show('pro-trial-claim').catch(() => undefined)
     }
 
     const handleDisabledSelect = (modelId: string) => {
@@ -353,7 +375,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         ? (favoritedModels || []).filter((favorite) => {
             const provider = favorite.provider
             const model = favorite.model
-            if (!provider || !model || provider.id === ModelProviderEnum.ChatboxAI) return false
+            if (!provider || !model || (chatboxAIModelList && provider.id === ModelProviderEnum.ChatboxAI)) return false
             if (!modelMatchesSearch({ modelId: model.modelId, modelName: model.nickname }, search, provider.name)) {
               return false
             }
@@ -380,7 +402,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         gap={0}
         className={clsx(
           'overflow-hidden',
-          MODEL_SELECTOR_SURFACE_CLASS,
+          getModelSelectorFloatingSurfaceClass(isMobile),
           isMobile ? 'border-0' : 'rounded-[10px] border border-solid border-chatbox-border-primary shadow-lg'
         )}
       >
@@ -486,10 +508,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                   onDesktopDetailOpen={openDesktopDetail}
                   onDesktopDetailClose={scheduleDesktopDetailClose}
                   onDisabledSelect={handleDisabledSelect}
+                  onClaimProTrial={() => claimProTrial('list_model', selectedModelId)}
                   pageName={pageName}
                 />
               )}
               <GenericProviderRows
+                hasChatboxCatalog={!!chatboxAIModelList}
                 favoriteOnly
                 favoritedModels={favoritedModels}
                 genericProviders={genericProviders}
@@ -538,10 +562,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                   onDesktopDetailOpen={openDesktopDetail}
                   onDesktopDetailClose={scheduleDesktopDetailClose}
                   onDisabledSelect={handleDisabledSelect}
+                  onClaimProTrial={() => claimProTrial('list_model', selectedModelId)}
                   pageName={pageName}
                 />
               )}
               <GenericProviderRows
+                hasChatboxCatalog={!!chatboxAIModelList}
                 favoriteOnly={false}
                 favoritedModels={favoritedModels}
                 genericProviders={genericProviders}
@@ -575,15 +601,14 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
             <Drawer.Trigger asChild>{children}</Drawer.Trigger>
             <Drawer.Portal>
               <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-              <Drawer.Content className="fixed bottom-0 left-0 right-0 outline-none">
-                <Stack
-                  gap={0}
-                  className={clsx(
-                    'max-h-[88vh] rounded-t-[16px] border border-b-0 border-solid',
-                    MODEL_SELECTOR_SURFACE_CLASS
-                  )}
-                  style={DRAWER_SURFACE_STYLE}
-                >
+              <Drawer.Content
+                className={clsx(
+                  'fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none',
+                  MODEL_SELECTOR_SURFACE_CLASS
+                )}
+                style={DRAWER_SURFACE_STYLE}
+              >
+                <Stack gap={0} className="max-h-[88vh]">
                   <div aria-hidden className="mx-auto my-3 h-1 w-14 rounded-full bg-chatbox-tint-tertiary opacity-70" />
                   <Drawer.Title className="hidden">{t('Select Model')}</Drawer.Title>
                   {content}
@@ -602,12 +627,14 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
           >
             <Drawer.Portal>
               <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
-              <Drawer.Content className="fixed bottom-0 left-0 right-0 outline-none">
-                <Stack
-                  gap={0}
-                  className={clsx('rounded-t-[16px] border border-b-0 border-solid', MODEL_SELECTOR_SURFACE_CLASS)}
-                  style={DRAWER_SURFACE_STYLE}
-                >
+              <Drawer.Content
+                className={clsx(
+                  'fixed bottom-0 left-0 right-0 rounded-t-[16px] border border-b-0 border-solid outline-none',
+                  MODEL_SELECTOR_SURFACE_CLASS
+                )}
+                style={DRAWER_SURFACE_STYLE}
+              >
+                <Stack gap={0}>
                   <div aria-hidden className="mx-auto my-3 h-1 w-14 rounded-full bg-chatbox-tint-tertiary opacity-70" />
                   <Drawer.Title className="hidden">{t('Model details')}</Drawer.Title>
                   {mobileDetail && (
@@ -616,8 +643,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                       pricingLink={chatboxAIModelList?.links?.modelPricing}
                       upgradeLink={chatboxAIModelList?.links?.upgrade}
                       onClose={() => setMobileDetail(null)}
-                      onUpgradeClick={() =>
-                        pageName && trackUpgradeModelClick(pageName, 'upgrade_modal', mobileDetail.modelId)
+                      onUpgradeClick={() => {
+                        if (pageName) trackUpgradeModelClick(pageName, 'upgrade_modal', mobileDetail.modelId)
+                        proTrial.reportUpgradeClick(mobileDetail.modelId)
+                      }}
+                      onClaimProTrial={
+                        proTrial.canClaim ? () => claimProTrial('upgrade_modal', mobileDetail.modelId) : undefined
                       }
                       mobile
                     />
@@ -654,7 +685,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
         </Combobox.Target>
         <Combobox.Dropdown
           ref={desktopDropdownRef}
-          className="!rounded-none !border-0 !bg-transparent !p-0 !shadow-none"
+          className={clsx('!rounded-none !border-0 !bg-transparent !p-0 !shadow-none', GLASS_HOST_CLASS)}
           style={{ overflow: 'visible' }}
         >
           {content}
@@ -662,6 +693,7 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
             <div
               key={desktopDetail.key}
               ref={desktopDetailRef}
+              data-native-view-overlay
               className="absolute"
               style={{
                 left: desktopDetail.left,
@@ -677,8 +709,12 @@ export const ModelSelectorV2 = forwardRef<HTMLDivElement, ModelSelectorV2Props>(
                 model={desktopDetail.model}
                 pricingLink={desktopDetail.pricingLink}
                 upgradeLink={desktopDetail.upgradeLink}
-                onUpgradeClick={() =>
-                  pageName && trackUpgradeModelClick(pageName, 'upgrade_modal', desktopDetail.model.modelId)
+                onUpgradeClick={() => {
+                  if (pageName) trackUpgradeModelClick(pageName, 'upgrade_modal', desktopDetail.model.modelId)
+                  proTrial.reportUpgradeClick(desktopDetail.model.modelId)
+                }}
+                onClaimProTrial={
+                  proTrial.canClaim ? () => claimProTrial('upgrade_modal', desktopDetail.model.modelId) : undefined
                 }
               />
             </div>

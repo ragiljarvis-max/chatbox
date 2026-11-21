@@ -14,6 +14,7 @@ export type GuideToolName =
   | 'show_suggested_questions'
   | 'show_free_trial_link'
   | 'show_claim_waiting'
+  | 'show_import_conversations'
   | 'mark_completed'
   | 'activate_license'
 
@@ -67,8 +68,10 @@ export interface UseGuideSessionReturn {
   /** Called when user clicks Claim Free Plan; renders the awaiting card and the polling lifecycle begins inside it. */
   onClaimStart: () => Promise<void>
   /** Called by useClaimPolling when a license is detected; activates locally and renders the celebration. */
-  onClaimDetected: (license: import('@/packages/remote').UserLicense) => Promise<void>
+  onClaimDetected: (license: import('@/packages/remote').UserLicense, email: string) => Promise<void>
   handleConfigComplete: () => void
+  importConversations: () => void
+  skipImport: () => void
   clearSession: () => void
   debugResetGuide: () => void
   debugSkipToLoginSuccess: () => void
