@@ -215,6 +215,33 @@ tawaran plan / upsell / promo / badge "PRO"/langganan, BUKAN alur login & aktiva
   ChatboxAI; login + license key ChatboxAI masih berfungsi; add custom provider tetap berfungsi;
   check + test lulus; APK arm64 + signed. Commit+push.
 
+## FASE 8 — hapus fitur Web Search, MCP, Skills, Agents & Memory (owner, 2026-11-21)
+Owner mau fokus ke **testing models** saja. Sembunyikan/hapus dari UI fitur berikut:
+- **Web Search** — `src/renderer/routes/settings/web-search.tsx`
+- **MCP** — `src/renderer/routes/settings/mcp.tsx`
+- **Skills** — `src/renderer/routes/settings/skills.tsx`
+- **Agents & Memory** — `src/renderer/routes/settings/agent.tsx` (halaman ini memuat pengaturan
+  agents & memory sekaligus; memory juga muncul di sini)
+
+### Pendekatan (sembunyikan dari UI, jangan nuked core)
+- Hilangkan **entry navigasi** fitur-fitur itu dari daftar nav Settings (lihat konfigurasi nav item /
+  group di `src/renderer/routes/settings/route.tsx` — array `SettingsNavItem` + group) dan dari
+  pencarian settings.
+- Hilangkan juga **entry point lain** yang mengarah ke fitur tersebut: menu di Sidebar, tombol/panel di
+  composer chat (mis. toggle web search / MCP / skills / agent mode), dan route langsung agar tidak
+  bisa diakses.
+- JANGAN menghapus kode inti shared/core yang dipakai pembuatan model & chat — cukup sembunyikan dari
+  UI dan navigasi, konsisten dengan pendekatan FASE 6/7. Tujuannya app bersih, hanya fokus model testing.
+- Pastikan tidak ada crash / referensi rusak setelah disembunyikan (`pnpm run check` 0 error).
+- Fokus app setelah ini: **Model Test tab** (FASE 5) + **custom provider BYOK** (FASE 6) sebagai inti.
+
+### Versi & build
+- Naikkan `package.json` satu tingkat (mis. 0.1.5 bila digabung, atau lanjut skema 0.1.x) dan build APK
+  arm64 signed ke `bin/V<versi>/` (jangan hapus versi lama). Verifikasi: fitur Web Search / MCP / Skills /
+  Agents & Memory tidak tampil di UI & nav; chat + model testing + custom provider tetap berfungsi;
+  `pnpm run check` 0 error; test terkait lulus; APK arm64 + signed + package `net.garybully.chatbox`.
+  Commit + push.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
