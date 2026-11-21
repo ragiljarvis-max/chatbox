@@ -117,6 +117,45 @@ FASE 4 belum selesai. Kondisi WIP yang tertinggal di disk (LANJUTKAN, jangan ula
 Tugas lanjutan: selesaikan diagnosis + terapkan fix source add provider yang sebenarnya, pastikan
 test lulus, lalu build APK 0.1.2 seperti definisi FASE 4 di atas.
 
+## FASE 5 — redesign health-check jadi tab "Model Test" + polish UI + matikan auto-update (owner, 2026-11-21)
+Owner tidak puas tampilan sekarang (`ALIVE · 3801 ms · 0.5 tok/s` saja). Kebutuhan:
+
+### A. Tab tersendiri "Model Test" (BUKAN di dalam settings provider)
+- Buat route top-level baru, mis. `src/renderer/routes/model-test.tsx` (atau `/model-test/`), sehingga
+  di mobile jadi halaman/tab tersendiri, mudah diakses (tambahkan entry di navigasi mobile / sidebar).
+- Pindahkan/jadikan halaman ini pusat fitur ping model massal. Panel lama di settings provider
+  (`ProviderHealthCheck.tsx`) boleh dihapus atau diarahkan ke tab baru — yang penting test model
+  punya TAB SENDIRI, tidak menyemen di halaman settings provider.
+
+### B. Ringkasan (summary) + popup detail
+- Setelah mass-ping selesai, tampilkan **ringkasan**: `N of M alive`, `N of M dead` (total model).
+- Ringkasan/hasil bisa di-click → buka **popup/detail** (drawer/bottom-sheet atau modal) berisi daftar
+  **per model**: badge ALIVE/DEAD, latency `xxx ms`, throughput `x.x tok/s`, nama provider+model.
+- Di popup, sediakan filter/toggle: **All / Alive / Dead** agar gampang lihat mana yang dead.
+- Urutkan: dead dulu atau by latency — bebas, yang penting informatif.
+
+### C. Polish UI lebih modern
+- Tampilan sekarang terlalu polos. Perindah: kartu/stat modern, badge berwarna (hijau alive / merah dead),
+  angka latency & tok/s rapi, progress saat ping berjalan, empty-state yang jelas.
+- Ikuti gaya UI repo (Mantine + CSS modules, dark theme). Konsisten dengan tampilan app.
+- Catatan: `3801 ms / 0.5 tok/s` terlihat buruk — pastikan pengukuran tok/s benar (pakai durasi streaming
+  penuh + jumlah token, bukan hanya time-to-first-token). Latency = time-to-first-token; tok/s dihitung
+  dari total token / durasi streaming.
+
+### D. Matikan / hapus cek update otomatis
+- Hapus atau matikan **cek update otomatis**. Terkait:
+  - setting `autoUpdate` (toggle "Automatic updates" di `src/renderer/routes/settings/about.tsx`)
+  - `UpdateSection` (`src/renderer/routes/about.tsx`) + `useUpdateStore`/`installUpdate`
+  - banner update di `src/renderer/Sidebar.tsx`
+- Yang diminta owner: "matikan cek update otomatis, hapus saja". Paling aman: pastikan mobile TIDAK
+  pernah melakukan auto-check update, dan sembunyikan/hapus UI update otomatis. Boleh hapus toggle
+  auto-update & banner. Jangan sampai app memanggil endpoint update check saat start di mobile.
+
+### Versi & build
+- Naikkan `package.json` → **0.1.3**. Build APK arm64 signed ke `bin/V0.1.3/` (jangan hapus versi lama).
+- Verifikasi: `pnpm run check` (0 error), test terkait lulus, APK arm64-only + signed + package
+  `net.garybully.chatbox`. Commit + push. Lapor path APK + bukti + screenshot bila memungkinkan.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
