@@ -105,6 +105,18 @@ Versi: setelah FASE 3+4 selesai, naikkan `package.json` → **0.1.2**, build APK
 `bin/V0.1.2/` (jangan hapus V0.1.0/V0.1.1), verifikasi arm64 + signed + add-provider fix, commit+push.
 Jika merge upstream mengubah versi upstream, tetap pakai skema versi fork 0.1.x.
 
+## CATATAN RESUME (FASE 4) — run sebelumnya mati karena gateway disconnect, 2026-11-21 ~06:38
+Bukan provider mati — keepalive ping timeout. FASE 3 SUDAH BERES (merge `c21acfb` + `UPSTREAM.md`).
+FASE 4 belum selesai. Kondisi WIP yang tertinggal di disk (LANJUTKAN, jangan ulang dari nol):
+- `package.json` sudah diubah ke **0.1.2** (belum commit).
+- File test baru (untracked, belum commit):
+  - `src/renderer/__tests__/add-provider-flow.test.tsx`
+  - `src/renderer/__tests__/custom-provider-page.test.tsx`
+  - `src/renderer/stores/add-provider-flow.test.ts`
+- **Fix source-nya BELUM diterapkan** — tak ada file source add-provider yang berubah.
+Tugas lanjutan: selesaikan diagnosis + terapkan fix source add provider yang sebenarnya, pastikan
+test lulus, lalu build APK 0.1.2 seperti definisi FASE 4 di atas.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
