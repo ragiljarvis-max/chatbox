@@ -73,6 +73,38 @@ Wajib:
    (`keytool -printcert -jarfile` atau unzip META-INF/*.RSA ada).
 7. Commit + push (kode & build config; keystore/ TIDAK dipush).
 
+## FASE 3 — merge upstream + catat UPSTREAM.md (owner request, 2026-11-21)
+ATURAN owner: setiap fork WAJIB punya `UPSTREAM.md` (jangan lupa sejauh mana fork tertinggal).
+Data upstream (sudah dicek orchestrator):
+- Upstream URL: https://github.com/chatboxai/chatbox (branch `main`)
+- Base fork ini: `0ac6385` (= upstream release v1.23.5)
+- Current upstream HEAD: `446bcf43e7a89a0411218821de54d87d7f3cfe11` (= tag v1.24.4), dicek 2026-11-21
+Tugas:
+1. Tambah remote upstream: `git remote add upstream https://github.com/chatboxai/chatbox.git`
+   (kalau belum). `git fetch upstream`.
+2. Buat `UPSTREAM.md` di root: URL upstream, tracked branch, SHA base fork, SHA upstream HEAD
+   saat merge + tanggal, tag upstream terakhir, dan perintah cek update
+   (`git ls-remote upstream HEAD` + `git fetch upstream && git log HEAD..upstream/main --oneline`).
+3. Merge upstream/main ke main lokal. Selesaikan konflik, prioritaskan mempertahankan fitur fork
+   (health-check provider, appId `net.garybully.chatbox`, signing config). Setelah merge,
+   pastikan fitur fork masih ada & build masih jalan.
+4. Jangan hancurkan commit fork. Bila konflik berat di file yang kita ubah, gabungkan secara hati-hati.
+
+## FASE 4 — fix "tidak bisa add provider, failed" (owner request, 2026-11-21)
+Owner lapor: menambah provider baru gagal/failed di APK. Diagnosis & fix:
+- Alur add provider: `AddProviderModal.tsx` (submit) → route
+  `src/renderer/routes/settings/provider/$providerId.tsx` (state `setProviderSettings`, `handleAddModel`).
+- Periksa apakah penyebabnya: (a) regresi dari fitur health-check yang kita tambah di `ProviderList.tsx`
+  / `ProviderHealthCheck.tsx`, (b) validasi nama/API mode kosong, (c) penyimpanan provider custom
+  (settingsStore `useProviderSettings`/`setProviderSettings`) gagal, atau (d) konflik setelah merge upstream.
+- Reproduksi: cek apakah tombol add provider benar-benar memanggil penyimpanan; lihat error yang
+  muncul. Perbaiki sampai add provider sukses (provider custom baru muncul di daftar).
+- Setelah fix, jalankan test terkait (`vitest run src/renderer/components/settings/provider`) + `pnpm run check`.
+
+Versi: setelah FASE 3+4 selesai, naikkan `package.json` → **0.1.2**, build APK arm64 signed ke
+`bin/V0.1.2/` (jangan hapus V0.1.0/V0.1.1), verifikasi arm64 + signed + add-provider fix, commit+push.
+Jika merge upstream mengubah versi upstream, tetap pakai skema versi fork 0.1.x.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
