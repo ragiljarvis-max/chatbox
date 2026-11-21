@@ -305,6 +305,69 @@ Rename app jadi **chatboss**. Fork dari chatbox, tapi identitasnya sendiri.
   (22.8 MB, arm64-v8a only, signed CN=garybully, aapt2: net.garybully.chatbox 0.1.3 versionCode 4).
   bin/V0.1.0/V0.1.1/V0.1.2 tetap ada.
 
+> CATATAN PATH: workdir fork sudah direname `~/projects/chatbox` → **`~/projects/chatboss`**.
+> Remote GitHub tetap `ragiljarvis-max/chatbox`. Semua path di bawah pakai `~/projects/chatboss`.
+
+## FASE 10 — polesan string, bersihkan about/sample chat, hapus provider ChatboxAI, Model Test per-model (owner, 2026-11-21)
+Workdir: `~/projects/chatboss`. Fase 1-9 SELESAI, jangan diulang.
+
+### A. String & teks chatbox → chatboss (sisa)
+- "Welcome to Chatbox AI" / "Welcome to Chatbox" / "Welcome to Chatbox!" → **"Welcome to Chatboss"**.
+  Titik: `src/renderer/routes/guide/-hooks/useGuideSession.ts` (baris ~902-903),
+  `src/renderer/components/common/ChatboxWelcomeCard.tsx` (baris ~36),
+  `src/renderer/routes/settings/provider/chatbox-ai/-components/LoginView.tsx` (baris ~63),
+  + kunci i18n di `packages/chatbox-i18n/src/locales/*/translation.json` ("Welcome to Chatbox",
+  "Welcome to Chatbox!"). Ubah nilai terjemahan "Chatbox AI" → "Chatboss" (en + locale lain seminimal
+  wajar; minimal en + zh-Hans).
+- **Animasi splash awal** menampilkan "chatbox" → ganti jadi **"Chatboss"**. Splash terkait:
+  `android/.../splash.png` (sudah tema boss di FASE 9) + splash/wordmark di renderer
+  (`src/renderer/index.tsx`, komponen splash/loading awal). Pastikan teks splash = Chatboss.
+- Sisa label UI lain yang masih "Chatbox" (bukan "chatboss") → ganti ke chatboss bila muncul ke user.
+
+### B. Halaman About (`src/renderer/routes/about.tsx`)
+- **Edit link Github**: judul → "gh chatboss" (atau "Link gh chatboss"), link → repo fork
+  `https://github.com/ragiljarvis-max/chatbox` (repo fork).
+- **HAPUS** item-item ini dari daftar about: **RedNote**, **WeChat** (beserta QR code
+  `WechatQRCode` + import `BrandRedNote`/`BrandWechat`/`IMG_WECHAT_QRCODE`), **Official Site**,
+  **Feedback**, **Changelog**, **FAQs**. Bersihkan import tak terpakai agar `pnpm run check` tetap 0 error.
+
+### C. Hapus sample/example/pinned chats bawaan
+- Hapus **sample chats / example chats bawaan** + **pinned chats bawaan** yang dibuat/ditampilkan
+  saat pertama kali (onboarding). Cari pembuatan sesi contoh/pinned default (mis. di guide onboarding
+  `useGuideSession.ts`, atau seed sesi awal). Tujuan: aplikasi bersih, tidak ada chat contoh bawaan.
+- Jangan hapus mekanisme folder/pin sesi milik user — hanya chat contoh BAWAAN.
+
+### D. Hapus provider "Chatbox AI" dari pemilihan model provider
+- FASE 6 sudah menyembunyikan provider bawaan dari daftar, tapi FASE 7 menyimpan ChatboxAI untuk
+  login. Sekarang owner minta **hapus semua provider "Chatbox AI"** dari pilihan model provider.
+- Sembunyikan `chatbox-ai` sepenuhnya dari: pemilih model, settings provider list, dan halaman
+  `settings/provider/chatbox-ai/` (arahkan/redirect). Fokus app = **custom provider BYOK** saja.
+- Catatan: bila login/license ChatboxAI masih dirujuk suatu tempat, jangan sampai crash — cukup
+  tidak ditawarkan sebagai pilihan provider model. `pnpm run check` harus tetap 0 error.
+
+### E. Model Test per-model + jenis test (vision, context, dll) — FITUR BARU
+- Sekarang tab Model Test (`src/renderer/routes/model-test.tsx`, util `src/renderer/utils/provider-health.ts`)
+  hanya "ping all". Perluas agar bisa **test per model** (pilih satu model → jalankan test) dan punya
+  beberapa **jenis test**:
+  - **Ping / koneksi** (sudah ada): alive/dead + latency ms + tok/s.
+  - **Vision test**: kirim 1 gambar kecil (base64) ke model, cek apakah model menerima & merespons
+    gambar (untuk model vision). Tampilkan dukungan vision + hasil.
+  - **Context test**: kirim prompt panjang / ukuran context tertentu, laporkan apakah diterima
+    (max context) + latency.
+  - Bebas tambah jenis lain yang berguna (mis. streaming test). Yang penting: user bisa pilih model
+    spesifik + pilih jenis test, bukan hanya ping-all.
+- UI: pada tab Model Test, tiap model punya tombol/aksi "test" + dropdown/pilihan jenis test
+  (Ping / Vision / Context / All). Hasil per model + jenis test ditampilkan (badge pass/fail, ms, tok/s).
+  Tetap pertahankan ringkasan N-of-M + popup detail dari FASE 5.
+- Ikon "boss" & gaya modern mengikuti FASE 9.
+
+### Versi & build
+- Naikkan `package.json` → **0.1.6**. Build APK arm64 signed ke `bin/V0.1.6/` (jangan hapus versi lama).
+- Verifikasi: string Chatboss benar; about bersih (tanpa RedNote/WeChat/Official/Feedback/Changelog/
+  FAQs, Github = gh chatboss); tanpa sample chat bawaan; provider Chatbox AI tak muncul; Model Test
+  per-model + jenis test berfungsi; `pnpm run check` 0 error; test lulus; APK arm64 + signed + package
+  `com.garybully.chatboss` + app_name chatboss. Commit + push. Lapor path APK + bukti.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
