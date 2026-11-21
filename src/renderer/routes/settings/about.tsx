@@ -7,9 +7,8 @@ import { SettingRow, SettingSwitchRow, SettingsPage, SettingsSection } from '@/c
 import useVersion from '@/hooks/useVersion'
 import platform from '@/platform'
 import { router } from '@/router'
-import { UpdateSection } from '@/routes/about'
 import iconPNG from '@/static/icon.png'
-import { useLanguage, useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 export const Route = createFileRoute('/settings/about')({
   component: RouteComponent,
@@ -18,28 +17,26 @@ export const Route = createFileRoute('/settings/about')({
 export function RouteComponent() {
   const { t } = useTranslation()
   const version = useVersion()
-  const language = useLanguage()
   const autoLaunch = useSettingsStore((s) => s.autoLaunch)
   const betaUpdate = useSettingsStore((s) => s.betaUpdate)
   const setSettings = useSettingsStore((s) => s.setSettings)
   const hasVersion = /\d/.test(version.version)
 
   return (
-    <SettingsPage title={t('About & Updates')} description={t('Version, updates and startup behavior.')}>
+    <SettingsPage title={t('About')} description="chatboss — model testing with your own API providers.">
       <SettingsSection>
         <SettingRow
           id="version"
           label={
             <Flex align="center" gap="sm">
               <Image src={iconPNG} w={32} h={32} radius="md" />
-              <span>Chatbox{hasVersion ? ` ${version.version}` : ''}</span>
+              <span>chatboss{hasVersion ? ` ${version.version}` : ''}</span>
             </Flex>
           }
-          control={<UpdateSection language={language} needCheckUpdate={version.needCheckUpdate} />}
         />
         <SettingRow
-          id="about-chatbox"
-          label={t('About Chatbox')}
+          id="about-chatboss"
+          label="About chatboss"
           control={
             <Button
               // The app router, not the settings one: settings can be open as an overlay whose

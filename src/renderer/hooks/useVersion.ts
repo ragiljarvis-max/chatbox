@@ -53,6 +53,10 @@ export default function useVersion() {
       _setVersion(version)
       try {
         const os = await platform.getPlatform()
+        // chatboss (FASE 9D): no update check on mobile/web — desktop only.
+        if (platform.type !== 'desktop') {
+          return
+        }
         const needUpdate = await remote.checkNeedUpdate(version, os, config, settings)
         setNeedCheckUpdate(needUpdate)
       } catch (e) {

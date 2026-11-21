@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'net.garybully.chatbox',
-  appName: 'Chatbox',
+  appId: 'com.garybully.chatboss',
+  appName: 'chatboss',
   webDir: 'release/app/dist/renderer',
   android: {
     allowMixedContent: true,

@@ -344,3 +344,26 @@ Rename app jadi **chatboss**. Fork dari chatbox, tapi identitasnya sendiri.
   (arm64-v8a only, signed CN=garybully, aapt2: net.garybully.chatbox 0.1.2). bin/V0.1.0 & V0.1.1 tetap.
 - CATATAN build: renderer build:renderer butuh Node 22 (~/.local/node22); hapus *.map manual; `npx cap sync android`;
   test jangan ditaruh di src/renderer/routes/** (route generator menganggapnya route).
+
+## FASE 9 — SELESAI (2026-11-21)
+- A: package -> com.garybully.chatboss (capacitor.config.ts appId+appName 'chatboss',
+  build.gradle namespace+applicationId, strings.xml package_name+custom_url_scheme,
+  MainActivity dipindah ke java/com/garybully/chatboss/, regenerasi via npx cap sync android).
+  app_name/title_activity_main -> 'chatboss'. package.json name+productName -> 'chatboss',
+  version 0.1.5. Label tampilan: src/renderer/index.html <title>chatboss</title>,
+  settings/about.tsx + routes/about.tsx -> 'chatboss', src/renderer/static/icon.png +
+  favicon.png + app-icons/*.png diganti ikon boss.
+- B: ikon boss baru (mahkota emas di latar navy gelap #101623) — dibuat sendiri via PIL
+  (assets/icon.svg + icon.png 1024 + icons/*.png; android mipmap ic_launcher/round/foreground
+  per-density digenerate; adaptive bg #101623; splash.png semua density digambar ulang tema boss).
+- C: settings/about.tsx — nama chatboss, UpdateSection + useLanguage DIHAPUS dari halaman
+  (hanya tampil versi), deskripsi: "chatboss — model testing with your own API providers."
+  routes/about.tsx: judul chatboss; UpdateSection kini hanya dirender di desktop.
+- D: useVersion.ts — checkNeedUpdate di-skip utk non-desktop (mobile tidak pernah call
+  endpoint update saat start/interval). needCheckUpdate permanen false di mobile.
+- Verifikasi: pnpm run check PASS (tsc 0 error); vitest __tests__ 3 file 5 test PASS,
+  stores/add-provider-flow 1 PASS, components/settings/provider 2 file 9 test PASS.
+  APK: bin/V0.1.5/chatboss-arm64-v0.1.5.apk (21.6 MB). aapt2 badging: package
+  com.garybully.chatboss versionCode 6 versionName 0.1.5, application-label 'chatboss',
+  native-code arm64-v8a. zip lib/ = {arm64-v8a} saja; META-INF/CERT.RSA ada (signed,
+  keytool CN=garybully, SHA256 E8:DE:D9:F4:...). bin/V0.1.0–V0.1.4 tetap ada.
