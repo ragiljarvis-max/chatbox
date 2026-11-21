@@ -74,7 +74,7 @@ export const uiStore = createStore(
       {
         toasts: [] as Toast[],
         quote: '',
-        realTheme: localStorage.getItem('initial-theme') === 'dark' ? 'dark' : ('light' as 'light' | 'dark'),
+        realTheme: (typeof localStorage !== 'undefined' && localStorage.getItem('initial-theme') === 'dark') ? 'dark' : ('light' as 'light' | 'dark'),
         messageListElement: null as RefObject<HTMLDivElement> | null,
         transcriptNavigation: null as TranscriptNavigation | null,
         messageScrollingAtTop: false,
