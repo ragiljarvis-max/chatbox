@@ -183,35 +183,37 @@ API sendiri (custom provider), tidak butuh preset bawaan (OpenAI, Claude, Gemini
 - Verifikasi: daftar provider hanya custom; add custom provider berfungsi; `pnpm run check` 0 error;
   test terkait lulus; APK arm64-only + signed + package `net.garybully.chatbox`. Commit + push.
 
-## FASE 7 — hapus ChatboxAI plan / tawaran / upsell (owner, 2026-11-21)
-Owner: "hapus chatbox ai plan, saya gak butuh tawarannya, sudah ada BYOK custom provider."
-Owner pakai BYOK (bring-your-own-key) via custom provider, tidak mau lihat tawaran/plan ChatboxAI.
+## FASE 7 — hapus TAWARAN PLAN / upsell ChatboxAI (login TETAP ADA) (owner, 2026-11-21, dikoreksi)
+Owner: "kalau loginnya chatbox saya masih perlu, cuma tawaran plan aja hapus."
+PENTING: **Login / license key ChatboxAI TETAP berfungsi** — owner masih pakainya. Yang dihapus HANYA
+tawaran plan / upsell / promo / badge "PRO"/langganan, BUKAN alur login & aktivasi license.
 
-### Cakupan
-- FASE 6 sudah menyembunyikan SEMUA provider bawaan (termasuk `chatbox-ai`) dari daftar provider.
-  FASE 7 membersihkan sisa permukaan ChatboxAI plan/tawaran yang masih bisa muncul:
-  - Onboarding/guide: `src/renderer/routes/guide/` — `UserTypeCards`, `ClaimWaitingCard`,
-    `ActionButton`, `index.tsx` (kartu pilihan tipe user + tawaran plan/claim). Sembunyikan/matikan
-    upsell plan; arahkan langsung ke pakai custom provider.
-  - Halaman ChatboxAI: `src/renderer/routes/settings/chatbox-ai.tsx` + `settings/provider/chatbox-ai/`
-    (`LicenseKeyView`, `LicenseOptionContent`, `LicenseDetailCard`, `LoginView`, `LoggedInView`,
-    `EmailCodeLoginModal`, `ChatboxAISettings`) — ini UI plan/license/login ChatboxAI. Karena provider
-    bawaan disembunyikan (FASE 6), pastikan halaman ini tidak bisa dijangkau / tidak tampil.
-  - Banner/teaser upgrade, tawaran langganan, badge "PRO"/plan di sidebar, pengaturan, web-search,
-    default-models, dsb. — sembunyikan.
-- JANGAN menghapus logika inti ChatboxAI di level model/runtime yang dipakai pembuatan model
-  (`src/shared/providers/definitions/chatboxai.ts` dan dependensinya) — cukup sembunyikan dari UI,
-  konsisten dengan pendekatan FASE 6. Tujuannya: tidak ada tawaran/plan ChatboxAI yang terlihat.
+### Cakupan (hapus)
+- Kartu tawaran plan / pemilihan tipe user / claim / pricing di onboarding:
+  `src/renderer/routes/guide/` (`UserTypeCards`, `ClaimWaitingCard`, dsb.) — hilangkan upsell plan,
+  tapi JANGAN hilangkan jalur login ChatboxAI bagi yang mau login.
+- Banner/teaser upgrade, tawaran langganan, badge "PRO"/plan, CTA "Upgrade"/"Subscribe"/"Get plan"
+  di sidebar, pengaturan, web-search, default-models, pemilih model, dsb.
+- Halaman/opsi harga paket ChatboxAI (`LicenseOptionContent` yang menawarkan paket berbayar) —
+  hilangkan tawaran paketnya.
+
+### Cakupan (JANGAN dihapus — WAJIB tetap ada)
+- `LoginView`, `EmailCodeLoginModal`, `LoggedInView` — alur login tetap.
+- `LicenseKeyView` / input license key + aktivasi — tetap (owner pakai license sendiri).
+- `LicenseDetailCard` yang menampilkan status license yang SUDAH dimiliki — tetap.
+- `ChatboxAISettings` inti + provider `chatboxai.ts` di level runtime — tetap.
+- Ringkas: yang dibuang = penawaran jualan plan; yang dipertahankan = cara owner login & pakai
+  license/key ChatboxAI.
 
 ### Pendekatan
-- Sama seperti FASE 6: sembunyikan dari UI, jangan nuked kode inti. Hapus/hilangkan komponen upsell
-  dari render path (kondisional false / tidak dirender), jangan hapus file yang dirujuk lintas modul.
-- Pastikan tidak ada crash / referensi rusak setelah disembunyikan (`pnpm run check` 0 error).
+- Sembunyikan komponen upsell dari render path (kondisional false / tidak dirender), jangan hapus file
+  yang dirujuk lintas modul. Pastikan tidak ada crash / referensi rusak (`pnpm run check` 0 error).
 
 ### Versi & build
 - Bila dikerjakan terpisah dari FASE 6, naikkan `package.json` satu tingkat (mis. 0.1.5) dan build APK
-  arm64 signed ke `bin/V<versi>/` (jangan hapus versi lama). Verifikasi: tidak ada UI ChatboxAI
-  plan/upsell; add custom provider tetap berfungsi; check + test lulus; APK arm64 + signed. Commit+push.
+  arm64 signed ke `bin/V<versi>/` (jangan hapus versi lama). Verifikasi: tidak ada tawaran plan/upsell
+  ChatboxAI; login + license key ChatboxAI masih berfungsi; add custom provider tetap berfungsi;
+  check + test lulus; APK arm64 + signed. Commit+push.
 
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
