@@ -242,6 +242,45 @@ Owner mau fokus ke **testing models** saja. Sembunyikan/hapus dari UI fitur beri
   `pnpm run check` 0 error; test terkait lulus; APK arm64 + signed + package `net.garybully.chatbox`.
   Commit + push.
 
+## FASE 9 — rebrand jadi "chatboss" (fork dari chatbox) (owner, 2026-11-21)
+Rename app jadi **chatboss**. Fork dari chatbox, tapi identitasnya sendiri.
+
+### A. Nama & package
+- Package name: **`com.garybully.chatboss`** (ganti dari `net.garybully.chatbox`). Ubah di:
+  - `capacitor.config.ts` → `appId: 'com.garybully.chatboss'`
+  - `android/app/build.gradle` → `namespace` + `applicationId`
+  - `android/app/src/main/res/values/strings.xml` → `package_name`, `custom_url_scheme`
+  - Pindahkan `MainActivity` ke `java/com/garybully/chatboss/` + ubah package line (regenerasi via
+    `npx cap sync android` setelah ubah appId agar konsisten).
+- Nama tampilan app: **`app_name` = "chatboss"** (strings.xml). Juga `package.json` `name` +
+  `productName` → `com.garybully.chatboss` (atau "chatboss"). Ganti label "Chatbox" yang tampil ke
+  "chatboss" di tempat yang relevan (judul app, about, dsb).
+
+### B. Logo / ikon → tema "boss"
+- Ganti ikon app jadi tema **boss** (mis. ikon kepala/boss, gaya minimal, cocok dark theme).
+- Sumber ikon di `assets/` (`icon.png`, `icon.svg`, `icon.ico`, `icon.icns`, `icons/`, `iconTemplate*`).
+  Ganti aset Android yang dipakai launcher (mipmap / `capacitor-assets`). Boleh generate via
+  `npx capacitor-assets generate --android` setelah menaruh icon source baru, atau taruh PNG per-density.
+- Buat ikon "boss" sederhana (SVG/PNG) sendiri — jangan pakai aset berlisensi. Ikon lama chatbox diganti.
+
+### C. Halaman About
+- Ubah `src/renderer/routes/settings/about.tsx`:
+  - Nama → "chatboss" (bukan Chatbox).
+  - **Hapus cek update / UpdateSection / needCheckUpdate / banner update** — owner tidak mau ada cek
+    update sama sekali di halaman about (selaras FASE 5D). Tampilkan hanya versi app, tanpa tombol
+    check update.
+  - Sesuaikan deskripsi/teks agar cocok dengan chatboss (fork; fokus model testing + BYOK custom provider).
+
+### D. Cek update dimatikan total
+- Pastikan tidak ada pemanggilan update check saat start / di halaman about. (FASE 5D sudah mulai;
+  FASE 9 pastikan sisa di about bersih.)
+
+### Versi & build
+- Naikkan `package.json` → lanjut skema 0.1.x (mis. 0.1.5 / sesuai antrean). Build APK arm64 signed ke
+  `bin/V<versi>/` (jangan hapus versi lama). Verifikasi: package `com.garybully.chatboss`, app_name
+  "chatboss", ikon baru, halaman about tanpa cek update, `pnpm run check` 0 error, test lulus,
+  APK arm64 + signed. Commit + push.
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
