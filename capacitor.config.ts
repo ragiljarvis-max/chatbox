@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'xyz.chatboxapp.ce',
+  appId: 'net.garybully.chatbox',
   appName: 'Chatbox',
   webDir: 'release/app/dist/renderer',
   android: {

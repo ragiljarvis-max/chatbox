@@ -78,3 +78,17 @@ Wajib:
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau
   pilih dep lama yang sudah ada di lockfile.
 - Verifikasi orchestrator: akan cek `git log`, path APK, `unzip -l` arm64, versi package.json.
+
+## FASE 2 — SELESAI (2026-11-21)
+- appId/applicationId/namespace = net.garybully.chatbox (capacitor.config.ts + android/app/build.gradle,
+  MainActivity dipindah ke java/net/garybully/chatbox/, strings.xml package_name & custom_url_scheme diubah).
+- android/app/build.gradle: signingConfigs.release membaca ../keystore/keystore.properties (tanpa hardcoded
+  password); buildType release pakai signingConfig release. versionCode 2, versionName 0.1.1.
+  CATATAN: android/ di-gitignore — bila regenerate `npx cap add android`, patch build.gradle di atas HARUS
+  diterapkan lagi (applicationId, namespace, signingConfigs, versionName, abiFilters arm64-v8a).
+- package.json version 0.1.1. APK: bin/V0.1.1/chatbox-arm64-v0.1.1.apk (signed, arm64-v8a only,
+  aapt2 badging: package net.garybully.chatbox versionName 0.1.1, native-code arm64-v8a;
+  keytool -printcert -jarfile OK, SHA256 cert E8:DE:D9:F4:...). bin/V0.1.0/ tetap ada.
+- Quirk: pnpm build:renderer butuh Node 22 (engines >=22.13 <23) — pakai ~/.local/node22; skrip
+  delete-sourcemaps menunjuk file yang tidak ada (.erb/scripts/delete-source-maps-runner.js) — jalankan
+  manual `find release/app/dist -name '*.map' -delete` sebelum `npx cap sync android`.
