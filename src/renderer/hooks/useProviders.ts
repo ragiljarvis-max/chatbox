@@ -1,4 +1,3 @@
-import { SystemProviders } from '@shared/defaults'
 import { isUsingOAuth, mergeSharedOAuthProviderSettings } from '@shared/oauth'
 import { ModelProviderEnum, type ProviderInfo } from '@shared/types'
 import { useCallback, useMemo } from 'react'
@@ -17,15 +16,9 @@ export const useProviders = () => {
   const licenseKey = useSettingsStore((state) => state.licenseKey)
   const providerSettingsMap = useSettingsStore((state) => state.providers)
 
-  // FASE 6: only custom providers are shown in the UI (plus ChatboxAI, whose login/license flow
-  // is kept per FASE 7). Built-in presets stay registered for internals but are hidden from lists.
-  const allProviderBaseInfos = useMemo(
-    () => [
-      ...SystemProviders().filter((p) => p.id === ModelProviderEnum.ChatboxAI),
-      ...(customProviders || []),
-    ],
-    [customProviders]
-  )
+  // FASE 6 + FASE 10 D: only custom providers are shown in the UI. ChatboxAI is no longer
+  // offered as a model provider (BYOK custom only); internals that reference it must not crash.
+  const allProviderBaseInfos = useMemo(() => [...(customProviders || [])], [customProviders])
   const providers = useMemo(
     () =>
       allProviderBaseInfos

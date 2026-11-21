@@ -38,12 +38,9 @@ export function RouteComponent() {
   const { isExceeded } = useVersion()
 
   const providers = useMemo<ProviderInfo[]>(() => {
-    // FASE 6: hide built-in presets — only ChatboxAI (login) + custom providers are listed.
-    const systemProviders = SystemProviders().filter((p) => p.id === 'chatbox-ai')
-    // Put ChatboxAI first
-    const chatboxAI = systemProviders.find((p) => p.id === 'chatbox-ai')
-    const others = systemProviders.filter((p) => p.id !== 'chatbox-ai')
-    return [...(chatboxAI ? [chatboxAI] : []), ...others, ...(customProviders || [])].map((p) => ({
+    // FASE 6 + FASE 10 D: hide built-in presets AND ChatboxAI — only custom providers are listed.
+    const systemProviders = SystemProviders().filter(() => false)
+    return [...systemProviders, ...(customProviders || [])].map((p) => ({
       ...p,
       ...(providersMap?.[p.id] || {}),
     }))

@@ -430,3 +430,29 @@ Workdir: `~/projects/chatboss`. Fase 1-9 SELESAI, jangan diulang.
   com.garybully.chatboss versionCode 6 versionName 0.1.5, application-label 'chatboss',
   native-code arm64-v8a. zip lib/ = {arm64-v8a} saja; META-INF/CERT.RSA ada (signed,
   keytool CN=garybully, SHA256 E8:DE:D9:F4:...). bin/V0.1.0–V0.1.4 tetap ada.
+
+## FASE 10 — SELESAI (2026-11-21)
+- A: i18n "Welcome to Chatbox" / "Welcome to Chatbox!" → "Welcome to Chatboss" di 15 locale
+  (en: "Welcome to Chatboss"/"Welcome to Chatboss!", zh-Hans: 欢迎使用/欢迎来到 Chatboss).
+  Splash renderer (src/renderer/index.ejs) wordmark path SVG diganti teks "chatboss";
+  index.ejs/index.html title + meta → chatboss. useGuideSession/LoginView/ChatboxWelcomeCard
+  memakai t() sehingga otomatis ikut locale baru.
+- B: about.tsx — Github item jadi "gh chatboss" → https://github.com/ragiljarvis-max/chatbox.
+  Item RedNote, WeChat (+QR), Official Site, Feedback, Changelog, FAQs DIHAPUS beserta
+  import BrandRedNote/BrandWechat/IMG_WECHAT_QRCODE + komponen WechatQRCode; List kini
+  menerima single child (Children.toArray).
+- C: src/renderer/setup/init_data.ts — initData() dikosongkan: tidak ada lagi sample/pinned
+  chat bawaan (defaultSessionsForEN/CN tidak dibuat). Mekanisme folder/pin user utuh.
+- D: provider "Chatbox AI" dihapus dari UI: useProviders.ts hanya custom providers;
+  settings/provider/route.tsx systemProviders = [] (hanya custom). Route chatbox-ai masih ada
+  tapi tak lagi ditawarkan; tidak ada crash (check 0 error).
+- E: Model Test per-model — provider-health.ts: TestKind 'ping'|'vision'|'context',
+  testVisionProvider (kirim PNG base64, cek respons), testContextProvider (~24k chars prompt,
+  TTFT + tok/s), runModelTest/runModelTestKinds/runSingleModelTests. model-test.tsx: tiap model
+  punya Select jenis test (Ping/Vision/Context/All) + tombol Test; hasil per kind PASS/FAIL +
+  ms + tok/s; ringkasan N-of-M + popup detail (filter All/Alive/Dead, dead dulu) dipertahankan.
+- Verifikasi: pnpm run check PASS (tsc 0 error); vitest 14 file 61 test PASS (jsdom pointer
+  noise pre-existing). APK: bin/V0.1.6/chatboss-arm64-v0.1.6.apk (21.6 MB) — lib ABIs
+  {arm64-v8a} saja, META-INF/CERT.RSA signed (CN=garybully, SHA256 E8:DE:D9:F4:...),
+  aapt2: com.garybully.chatboss versionCode 7 versionName 0.1.6, label 'chatboss'.
+  bin/V0.1.0–V0.1.5 tetap ada.

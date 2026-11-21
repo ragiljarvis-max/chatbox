@@ -89,16 +89,165 @@ export async function pingProvider(
   }
 }
 
+/** Run selected test kinds for ONE model from the renderer, using live settings/config/deps. */
+export async function runSingleModelTests(
+  target: PingTarget,
+  kinds: TestKind[],
+  onResult: (result: ProviderTestResult) => void,
+  isCancelled: () => boolean = () => false
+): Promise<void> {
+  const settings = settingsStore.getState()
+  const configs = await platform.getConfig()
+  const dependencies = await createModelDependencies()
+  await runModelTestKinds(target, kinds, { settings, configs, dependencies }, onResult, isCancelled)
+}
+
 export type ModelResultFilter = 'all' | 'alive' | 'dead'
+
+export type TestKind = 'ping' | 'vision' | 'context'
+
+export interface ProviderTestResult extends ProviderHealthResult {
+  kind: TestKind
+}
+type TestContext = { settings: Settings; configs: Config; dependencies: ModelDependencies }
+
+const VISION_IMAGE_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+
+// ~24k chars ≈ ~6k tokens of filler to probe long-context acceptance.
+const CONTEXT_FILLER =
+  'The quick brown fox jumps over the lazy dog while counting stars in the midnight sky. '
+const CONTEXT_PROMPT = CONTEXT_FILLER.repeat(340) + '\n\nIgnore all text above and reply with the single word: ok'
+
+/**
+ * Vision test: send a tiny base64 image and check the model accepts and responds to it.
+ * Latency = full request duration (non-streaming chat call).
+ */
+export async function testVisionProvider(
+  target: PingTarget,
+  context: { settings: Settings; configs: Config; dependencies: ModelDependencies }
+): Promise<ProviderTestResult> {
+  const { providerId, modelId } = target
+  const checkedAt = Date.now()
+  try {
+    const modelInstance = getModel(
+      { provider: providerId, modelId },
+      context.settings,
+      context.configs,
+      context.dependencies
+    )
+    const start = performance.now()
+    await modelInstance.chat(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Reply with the single word: seen' },
+            { type: 'image', image: `data:image/png;base64,${VISION_IMAGE_BASE64}` },
+          ],
+        },
+      ],
+      { onResultChange: () => {} }
+    )
+    return { providerId, modelId, kind: 'vision', status: 'alive', latencyMs: Math.round(performance.now() - start), checkedAt }
+  } catch (e: unknown) {
+    const err = e as { responseBody?: string; message?: string }
+    return {
+      providerId,
+      modelId,
+      kind: 'vision',
+      status: 'dead',
+      error: err?.responseBody || err?.message || String(e),
+      checkedAt,
+    }
+  }
+}
+
+/**
+ * Context test: send a long prompt (~6k tokens) and check the model accepts it.
+ * Latency = time to first token; tok/s from the streaming window.
+ */
+export async function testContextProvider(
+  target: PingTarget,
+  context: { settings: Settings; configs: Config; dependencies: ModelDependencies }
+): Promise<ProviderTestResult> {
+  const { providerId, modelId } = target
+  const checkedAt = Date.now()
+  try {
+    const modelInstance = getModel(
+      { provider: providerId, modelId },
+      context.settings,
+      context.configs,
+      context.dependencies
+    )
+    let firstTokenAt: number | null = null
+    let lastTokenAt: number | null = null
+    let chars = 0
+    const start = performance.now()
+    for await (const part of modelInstance.chatStream([{ role: 'user', content: CONTEXT_PROMPT }], {})) {
+      if (part.type === 'text-delta') {
+        if (firstTokenAt === null) firstTokenAt = performance.now()
+        lastTokenAt = performance.now()
+        chars += part.text.length
+      }
+    }
+    if (firstTokenAt === null) throw new Error('No response from provider')
+    const streamMs = (lastTokenAt ?? firstTokenAt) - firstTokenAt
+    const tokens = Math.max(1, Math.round(chars / 4))
+    const tokensPerSecond =
+      streamMs > 0 ? Number(((tokens / streamMs) * 1000).toFixed(1)) : Number(tokens.toFixed(1))
+    return {
+      providerId,
+      modelId,
+      kind: 'context',
+      status: 'alive',
+      latencyMs: Math.round(firstTokenAt - start),
+      tokensPerSecond,
+      checkedAt,
+    }
+  } catch (e: unknown) {
+    const err = e as { responseBody?: string; message?: string }
+    return {
+      providerId,
+      modelId,
+      kind: 'context',
+      status: 'dead',
+      error: err?.responseBody || err?.message || String(e),
+      checkedAt,
+    }
+  }
+}
+
+/** Run one test of the given kind against a single model. */
+export async function runModelTest(target: PingTarget, kind: TestKind, context: TestContext): Promise<ProviderTestResult> {
+  if (kind === 'vision') return testVisionProvider(target, context)
+  if (kind === 'context') return testContextProvider(target, context)
+  const result = await pingProvider(target, context)
+  return { ...result, kind: 'ping' }
+}
+
+/** Run every selected kind for one model, sequentially, reporting each result. */
+export async function runModelTestKinds(
+  target: PingTarget,
+  kinds: TestKind[],
+  context: TestContext,
+  onResult: (result: ProviderTestResult) => void,
+  isCancelled: () => boolean
+): Promise<void> {
+  for (const kind of kinds) {
+    if (isCancelled()) return
+    onResult(await runModelTest(target, kind, context))
+  }
+}
 
 /**
  * Apply the popup filter and sort: dead first (worst news up top),
  * then by latency ascending so fast models lead within each group.
  */
-export function filterAndSortResults(
-  results: ProviderHealthResult[],
+export function filterAndSortResults<T extends ProviderHealthResult>(
+  results: T[],
   filter: ModelResultFilter
-): ProviderHealthResult[] {
+): T[] {
   const filtered = results.filter((r) => filter === 'all' || r.status === filter)
   return filtered.sort((a, b) => {
     if (a.status !== b.status) return a.status === 'dead' ? -1 : 1
@@ -113,7 +262,7 @@ export function filterAndSortResults(
 export async function pingProvidersBatch(
   targets: PingTarget[],
   maxRpm: number,
-  onResult: (result: ProviderHealthResult) => void,
+  onResult: (result: ProviderTestResult) => void,
   isCancelled: () => boolean
 ): Promise<void> {
   const interval = Math.max(0, 60000 / Math.max(1, maxRpm))
@@ -129,6 +278,6 @@ export async function pingProvidersBatch(
     }
     if (isCancelled()) return
     const result = await pingProvider(targets[i], context)
-    onResult(result)
+    onResult({ ...result, kind: 'ping' })
   }
 }

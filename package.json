@@ -1,7 +1,7 @@
 {
   "name": "chatboss",
   "productName": "chatboss",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "engines": {
     "node": ">=22.13.0 <23.0.0",
     "pnpm": ">=10.17.0"

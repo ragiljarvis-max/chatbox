@@ -1,6 +1,6 @@
-import { Badge, Box, Button, Card, Center, Flex, Group, Loader, Modal, NumberInput, Progress, SegmentedControl, ScrollArea, Stack, Text, Title, UnstyledButton } from '@mantine/core'
+import { Badge, Box, Button, Card, Center, Flex, Group, Loader, Modal, NumberInput, Progress, SegmentedControl, ScrollArea, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconActivity, IconFlask, IconRefresh } from '@tabler/icons-react'
+import { IconActivity, IconFlask, IconPlayerPlay, IconRefresh } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,13 +8,28 @@ import Page from '@/components/layout/Page'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useProviders } from '@/hooks/useProviders'
-import { filterAndSortResults, pingProvidersBatch, type ModelResultFilter, type ProviderHealthResult } from '@/utils/provider-health'
+import {
+  filterAndSortResults,
+  pingProvidersBatch,
+  runSingleModelTests,
+  type ModelResultFilter,
+  type PingTarget,
+  type ProviderTestResult,
+  type TestKind,
+} from '@/utils/provider-health'
 
 export const Route = createFileRoute('/model-test')({
   component: ModelTestRoute,
 })
 
-const resultKey = (providerId: string, modelId: string) => `${providerId}::${modelId}`
+const resultKey = (providerId: string, modelId: string, kind: string) => `${providerId}::${modelId}::${kind}`
+
+const TEST_KIND_OPTIONS: { label: string; value: string }[] = [
+  { label: 'Ping', value: 'ping' },
+  { label: 'Vision', value: 'vision' },
+  { label: 'Context', value: 'context' },
+  { label: 'All', value: 'all' },
+]
 
 function StatCard(props: {
   label: string
@@ -81,7 +96,9 @@ function ModelTestRoute() {
   const { providers } = useProviders()
   const [maxRpm, setMaxRpm] = useState<number | ''>(30)
   const [running, setRunning] = useState(false)
-  const [results, setResults] = useState<Record<string, ProviderHealthResult>>({})
+  const [results, setResults] = useState<Record<string, ProviderTestResult>>({})
+  const [selectedKinds, setSelectedKinds] = useState<Record<string, string>>({})
+  const [testingKeys, setTestingKeys] = useState<Record<string, boolean>>({})
   const [filter, setFilter] = useState<ModelResultFilter>('all')
   const [detailOpen, detailHandlers] = useDisclosure(false)
 
@@ -94,9 +111,15 @@ function ModelTestRoute() {
   )
 
   const resultList = useMemo(() => Object.values(results), [results])
-  const doneCount = resultList.length
+  const doneCount = useMemo(
+    () => new Set(resultList.map((r) => `${r.providerId}::${r.modelId}`)).size,
+    [resultList]
+  )
   const totalCount = targets.length
-  const aliveCount = resultList.filter((r) => r.status === 'alive').length
+  const aliveCount = useMemo(
+    () => new Set(resultList.filter((r) => r.status === 'alive').map((r) => `${r.providerId}::${r.modelId}`)).size,
+    [resultList]
+  )
   const deadCount = doneCount - aliveCount
 
   const pingAll = async () => {
@@ -109,12 +132,29 @@ function ModelTestRoute() {
         targets,
         typeof maxRpm === 'number' ? maxRpm : 30,
         (result) => {
-          setResults((prev) => ({ ...prev, [resultKey(result.providerId, result.modelId)]: result }))
+          setResults((prev) => ({ ...prev, [resultKey(result.providerId, result.modelId, result.kind)]: result }))
         },
         () => false
       )
     } finally {
       setRunning(false)
+    }
+  }
+
+  const modelKeyOf = (target: PingTarget) => `${target.providerId}::${target.modelId}`
+
+  const testOne = async (target: PingTarget) => {
+    const mKey = modelKeyOf(target)
+    if (testingKeys[mKey] || running) return
+    const sel = selectedKinds[mKey] || 'ping'
+    const kinds: TestKind[] = sel === 'all' ? ['ping', 'vision', 'context'] : [sel as TestKind]
+    setTestingKeys((prev) => ({ ...prev, [mKey]: true }))
+    try {
+      await runSingleModelTests(target, kinds, (result) => {
+        setResults((prev) => ({ ...prev, [resultKey(result.providerId, result.modelId, result.kind)]: result }))
+      })
+    } finally {
+      setTestingKeys((prev) => ({ ...prev, [mKey]: false }))
     }
   }
 
@@ -204,6 +244,52 @@ function ModelTestRoute() {
                 {t('Tap a summary card to see per-model details.')}
               </Text>
             )}
+
+            <Stack gap="xs">
+              {targets.map((target) => {
+                const mKey = modelKeyOf(target)
+                const modelResults = resultList.filter((r) => r.providerId === target.providerId && r.modelId === target.modelId)
+                return (
+                  <Card key={mKey} withBorder radius="md" py="xs" px="sm">
+                    <Flex justify="space-between" align="center" gap="xs" wrap="wrap">
+                      <Box miw={0} style={{ overflow: 'hidden', flex: 1 }}>
+                        <Text size="sm" truncate>
+                          {providerName(target.providerId)} · {target.modelId}
+                        </Text>
+                        {modelResults.length > 0 && (
+                          <Text size="xs" c="dimmed">
+                            {modelResults
+                              .map((r) => `${r.kind.toUpperCase()} ${r.status === 'alive' ? 'PASS' : 'FAIL'}${r.latencyMs !== undefined ? ` ${r.latencyMs}ms${r.tokensPerSecond !== undefined ? ` ${r.tokensPerSecond}tok/s` : ''}` : ''}`)
+                              .join(' · ')}
+                          </Text>
+                        )}
+                      </Box>
+                      <Group gap="xs">
+                        <Select
+                          size="xs"
+                          w={120}
+                          data={TEST_KIND_OPTIONS}
+                          value={selectedKinds[mKey] || 'ping'}
+                          onChange={(value) =>
+                            setSelectedKinds((prev) => ({ ...prev, [mKey]: value || 'ping' }))
+                          }
+                          data-testid={`model-test-kind-${mKey}`}
+                        />
+                        <Button
+                          size="xs"
+                          leftSection={<ScalableIcon icon={IconPlayerPlay} size={14} />}
+                          onClick={() => testOne(target)}
+                          loading={!!testingKeys[mKey]}
+                          data-testid={`model-test-run-${mKey}`}
+                        >
+                          {t('Test')}
+                        </Button>
+                      </Group>
+                    </Flex>
+                  </Card>
+                )
+              })}
+            </Stack>
           </>
         )}
 
@@ -240,15 +326,16 @@ function ModelTestRoute() {
                   </Center>
                 ) : (
                   visibleResults.map((r) => (
-                    <Card key={resultKey(r.providerId, r.modelId)} withBorder radius="md" py="xs" px="sm">
+                    <Card key={resultKey(r.providerId, r.modelId, r.kind)} withBorder radius="md" py="xs" px="sm">
                       <Flex justify="space-between" align="center" gap="xs">
                         <Box miw={0} style={{ overflow: 'hidden' }}>
                           <Text size="sm" truncate>
                             {providerName(r.providerId)} · {r.modelId}
                           </Text>
                           <Text size="xs" c="dimmed">
+                            {r.kind.toUpperCase()} ·{' '}
                             {r.status === 'alive' && r.latencyMs !== undefined
-                              ? `${r.latencyMs} ms · ${r.tokensPerSecond} tok/s`
+                              ? `${r.latencyMs} ms · ${r.tokensPerSecond ?? '—'} tok/s`
                               : (r.error || '').slice(0, 80)}
                           </Text>
                         </Box>
