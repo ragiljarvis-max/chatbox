@@ -56,6 +56,23 @@ Tambahkan fitur "health-check / mass ping" provider. Satu layar bisa mem-ping BA
 5. `package.json` version = 0.1.0. Commit + push ke `ragiljarvis-max/chatbox`.
 6. Laporan: apa yang berubah, path APK, bukti verifikasi (log build + unzip cek arm64).
 
+## FASE 2 — release signing + ganti package (owner request, 2026-11-21)
+Sebelumnya APK "appears to be invalid" saat diinstall = APK release BELUM ditandatangani.
+Wajib:
+1. **Ganti applicationId** jadi `net.garybully.chatbox` (di `capacitor.config.ts` appId dan
+   `android/app/build.gradle` applicationId). Regenerasi android/ via `cap sync` agar konsisten.
+2. **Keystore release SUDAH dibuat owner** di `keystore/chatbox-release.jks` (alias `chatbox-release`,
+   PKCS12). Kredensial ada di `keystore/keystore.properties` (storeFile/storePassword/keyAlias/keyPassword).
+   JANGAN hardcode password di build.gradle — baca dari `keystore/keystore.properties`.
+3. Konfigurasi signingConfig release di `android/app/build.gradle` memakai keystore itu (signingConfig
+   release untuk buildType release). APK hasil HARUS signed (bukan unsigned).
+4. **Gitignore** `keystore/` (jangan push keystore/password ke repo).
+5. Naikkan versi `package.json` → **0.1.1**. Output APK baru ke `bin/V0.1.1/`
+   (`chatbox-arm64-v0.1.1.apk`). **Jangan hapus `bin/V0.1.0/`**.
+6. Verifikasi arm64 (`lib/` hanya `arm64-v8a`) + verifikasi APK signed
+   (`keytool -printcert -jarfile` atau unzip META-INF/*.RSA ada).
+7. Commit + push (kode & build config; keystore/ TIDAK dipush).
+
 ## Catatan owner (orchestrator)
 - Host TANPA internet sudo; semua dependensi via pnpm/npm registry yang sudah bisa dijangkau.
 - Jika `minimumReleaseAge` pnpm memblokir dep baru, pakai `--no-frozen-lockfile` hati-hati atau

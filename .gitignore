@@ -204,3 +204,6 @@ tmp_*.*
 /android/
 /bin/
 
+
+# release keystore (jangan dipush)
+/keystore/
